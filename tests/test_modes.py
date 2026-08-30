@@ -161,8 +161,11 @@ class PairModeTest(unittest.TestCase):
 
     def test_pair_mode_times_itself_out(self):
         self.modes.start_pair_mode()
-        self.assertTrue(wait_until(lambda: self.modes.get_mode() != MODE_PAIR, timeout=2.0))
-        self.assertIn("qr-stop", self.central.calls)
+        # Wait for the teardown itself, not merely the mode flip: stop_pair_mode
+        # announces onPairStop() before it releases the camera.
+        self.assertTrue(wait_until(lambda: "qr-stop" in self.central.calls, timeout=2.0),
+                        self.central.calls)
+        self.assertNotEqual(self.modes.get_mode(), MODE_PAIR)
 
     def test_qr_payload_shape_is_ssid_slash_a_password_slash_a_key(self):
         self.modes.start_pair_mode()

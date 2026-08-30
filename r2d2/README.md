@@ -27,13 +27,52 @@ python3 -m r2d2 --port /dev/ttyS2 --config /etc/r2d2/config.json
 ```
 
 `--mock`이면 송신 프레임과 재생될 효과음이 로그로 남고, 시리얼·카메라·오디오를
-건드리지 않습니다. 클라이언트 검사에는 저장소의 `info/protocol/web_client.py`를
+건드리지 않습니다. 브라우저 콘솔이 자동으로 켜지므로 본체와 같은 네트워크에서
+`http://<robot-ip>:8080/` 를 열면 됩니다(`--no-web`으로 끄고 `--web-port`로
+바꿀 수 있습니다). 명령줄 검사에는 저장소의 `info/protocol/web_client.py`를
 쓸 수 있습니다.
 
 ```bash
 python3 info/protocol/web_client.py --port 8887 move --power 50 --angle 0
 python3 info/protocol/uart_client.py --device /dev/ttyS2 gin
 ```
+
+## 웹 콘솔 (`r2d2/web/index.html`)
+
+원본 안드로이드 앱은 화면 안에 콘솔을 가지고 있었고 웹 클라이언트는 별개
+프로그램이었습니다. 이 포팅에는 화면이 없으므로 **브라우저 콘솔**을 새로
+붙였습니다. 단일 파일 정적 페이지이고 CDN을 불러오지 않습니다(액세스 포인트에는
+업링크가 없으므로). 별도 프로토콜 없이 검증된 두 WebSocket 포트만 씁니다 —
+콘솔이 할 수 있는 것은 API가 이미 허용하는 것뿐입니다.
+
+| 패널 | 사용하는 명령 |
+|---|---|
+| 조종 패드 | `user_control`(점유), 300ms 주기 `move` |
+| 머리 | `move-head`, `head-dir`, `d-head-power`, `d-leg-power` |
+| 모드 | `mode` 0–20(원본 명칭 병기), `projector` |
+| 효과음 | `play_sound`(사운드 ID 표 그대로) |
+| LED/LCD | `led`(채널별 0–6, 생략은 `-1`), `lcd` |
+| 상태·설정 | `gin` push 수신, `face_detection`/`voice_recognition`/`mute`/`change_name` |
+| 점검 | `reset-wdt`, `reset_mcu`, `power` |
+| Wi-Fi·페어링 | `getWifiList`, `connectWifi`, `paired_list`, `unpair` |
+| 카메라 | `ws :12121` 바이너리 JPEG → `<canvas>` (12121은 HTTP가 아님) |
+
+연결 직후 `grantAccess`를 보냅니다 — 서버는 10초 안에 인증되지 않은 소켓을
+끊습니다. uuid는 `localStorage`에 저장해 재연결 시 재페어링이 필요 없고, 조종
+중에는 서버의 12초 제어 만료를 피하려 5초마다 `user_control`을 갱신합니다.
+
+의도적으로 **없는** 버튼 세 가지:
+
+- `AP 토글` — 원본에서 AP 전환은 MCU 물리 버튼(`{"cmd":"btn","value":2}`)이고
+  `btn`은 수신 전용이라 웹에서 보낼 수 없습니다. 대신 `AP 상태 갱신`이
+  `gin`+`getWifiList`로 상태만 다시 읽습니다.
+- `head-shift`, `debug` — `CommandReceiver`의 수신 목록에 없는 이름입니다.
+  `head-shift`는 얼굴 추적 루프가 내부적으로만 씁니다.
+
+`tests/test_web.py`가 페이지 안의 모든 `cmd` 리터럴을 `ALL_COMMANDS`와 대조하고,
+스크립트가 참조하는 id가 마크업에 존재하는지 확인하므로, 위 제약은 테스트로
+고정되어 있습니다. `/health`는 진단용 상태 JSON인데, 이건 원본 프로토콜이 아니라
+이 콘솔 서버만의 부가 기능입니다.
 
 ## 모듈 구성
 
@@ -55,6 +94,8 @@ python3 info/protocol/uart_client.py --device /dev/ttyS2 gin
 | `voice.py` | `VoiceRecognizer`, `VoiceToEventHandler` | 어구표 → 동작 매핑, 15s 자동 중지 |
 | `wifi.py` | `WifiService` | AP 모드와 provisioning(`nmcli`) |
 | `discovery.py` | `UDPBroadcastService` | 3초 주기 브로드캐스트 |
+| `web.py` | *(원본에 없음 — 앱은 화면 안 콘솔을 썼음)* | 정적 콘솔 서빙, `/health` |
+| `web/index.html` | `activity_main.xml` + 웹 콘솔 | 브라우저 조종 패널(단일 파일) |
 | `updater.py` | `SelfUpdate/AppUpdater` | download→install 상태 머신(스테이) |
 | `models.py` | `Model/Command`, `GinResponse`, `Robot`, `Client` | 프레임/응답 데이터 형 |
 | `state.py` | `RobotPreference` | 상태 저장(원자적 쓰기) |
@@ -173,7 +214,7 @@ python3 info/protocol/uart_client.py --device /dev/ttyS2 gin
 ## 테스트
 
 ```bash
-python3 -m unittest discover -s tests -t tests        # 140개, 하드웨어 불필요
+python3 -m unittest discover -s tests -t tests        # 164개, 하드웨어 불필요
 R2D2_TEST_LOG=debug python3 -m unittest discover -s tests -t tests
 ```
 
@@ -198,7 +239,7 @@ sudo cp r2d2/config.example.json /etc/r2d2/config.json
 sudo cp scripts/r2d2.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now r2d2
 journalctl -fu r2d2
-```
+# then open http://<board-ip>:8080/  (browser console)
 
 서비스 계정에 UART 권한이 필요합니다: `sudo usermod -aG dialout r2d2`.
 `poweroff`까지 허용하려면 `allow_host_shutdown`을 켜고 유닛의

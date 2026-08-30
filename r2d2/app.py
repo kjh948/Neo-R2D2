@@ -24,6 +24,7 @@ from .transport import JsonLineTransport
 from .updater import Updater
 from .vision import CameraWorker, FaceDetector
 from .voice import VoiceRecognizer, VoiceToEventHandler
+from .web import WebConsoleServer
 from .wifi import WifiService
 
 LOG = get_logger("app")
@@ -127,6 +128,7 @@ class RobotApplication:
         )
         self.server: Optional[RobotServer] = None
         self.streaming: Optional[VideoStreamingServer] = None
+        self.web: Optional[WebConsoleServer] = None
         self.mcu = McuCommandReceiver(
             event_handler=self.events,
             state=self.state,
@@ -181,6 +183,19 @@ class RobotApplication:
         )
         self.streaming.start()
 
+        if self.config.web_enabled:
+            try:
+                self.web = WebConsoleServer(
+                    host=self.config.web_host,
+                    port=self.config.web_port,
+                    status_provider=self.status,
+                )
+                self.web.start()
+            except OSError as exc:
+                # A busy console port must not stop the robot from booting.
+                LOG.error("web console disabled: %s", exc)
+                self.web = None
+
         self.events.software_ready()
         self._start_gin_poll()
 
@@ -207,6 +222,9 @@ class RobotApplication:
             self.streaming.stop()
         if self.server is not None:
             self.server.stop()
+        if self.web is not None:
+            self.web.stop()
+            self.web = None
         self.central.stop_all_control()
         self.mode_controller.close()
         self.events.close()

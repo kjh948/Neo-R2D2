@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>R2-D2 Console</title>
+<style>
+:root{
+  --bg:#0b0f14; --panel:#141a22; --panel2:#1b232e; --line:#25303d;
+  --ink:#d9e3ee; --dim:#8296ab; --accent:#4fd1c5; --warn:#f6ad55; --bad:#fc8181; --ok:#68d391;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:0;background:var(--bg);color:var(--ink);
+  font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+body{height:auto;min-height:100%}
+header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line);
+  padding:10px 14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+header h1{font-size:15px;margin:0;letter-spacing:.06em}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--bad);display:inline-block;margin-right:6px}
+.dot.on{background:var(--ok)}
+.spacer{flex:1}
+main{display:grid;gap:12px;padding:14px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+  max-width:1400px;margin:0 auto}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+section h2{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin:0 0 10px}
+label{display:block;font-size:11px;color:var(--dim);margin:8px 0 3px}
+input,select,button,textarea{font:inherit;color:var(--ink);background:var(--panel2);
+  border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%}
+button{cursor:pointer}
+button:hover{border-color:var(--accent);color:var(--accent)}
+button:active{transform:translateY(1px)}
+button.hot{border-color:var(--bad);color:var(--bad)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row>*{flex:1 1 90px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:6px}
+.stat{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px dashed var(--line);font-size:12px}
+.stat:last-child{border:0}
+.stat b{font-weight:600}
+.badge{padding:1px 7px;border-radius:20px;font-size:11px;background:var(--panel2);border:1px solid var(--line)}
+.badge.ok{color:var(--ok);border-color:var(--ok)}
+.badge.warn{color:var(--warn);border-color:var(--warn)}
+.badge.bad{color:var(--bad);border-color:var(--bad)}
+#pad{width:190px;height:190px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#1f2937,#111721);
+  border:1px solid var(--line);position:relative;margin:4px auto;touch-action:none;user-select:none}
+#knob{width:56px;height:56px;border-radius:50%;background:var(--accent);opacity:.85;position:absolute;
+  left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none}
+#crosshair{position:absolute;inset:0;border-radius:50%;pointer-events:none;
+  background:linear-gradient(var(--line),var(--line)) 50% 0/1px 100% no-repeat,
+             linear-gradient(var(--line),var(--line)) 0 50%/100% 1px no-repeat}
+video{width:100%;border-radius:6px;background:#000;aspect-ratio:4/3}
+#log{height:230px;overflow:auto;background:#080c11;border:1px solid var(--line);border-radius:6px;
+  padding:8px;font-size:11px;white-space:pre-wrap;word-break:break-all}
+#log .out{color:var(--accent)} #log .in{color:var(--ok)} #log .err{color:var(--bad)} #log .note{color:var(--dim)}
+canvas.frame{display:none}
+.swatches{display:flex;gap:6px;margin-top:6px}
+.sw{flex:1;height:22px;border-radius:4px;border:1px solid var(--line)}
+.note{color:var(--dim);font-size:11px}
+hr{border:0;border-top:1px solid var(--line);margin:10px 0}
+h3{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin:12px 0 6px}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<header>
+  <h1>R2-D2 CONSOLE</h1>
+  <span><span class="dot" id="wsDot"></span><span id="wsText">연결 안 됨</span></span>
+  <span><span class="dot" id="vsDot"></span>video</span>
+  <span id="robotName" class="badge">—</span>
+  <span id="modeBadge" class="badge">mode —</span>
+  <span id="battBadge" class="badge">—</span>
+  <span class="spacer"></span>
+  <button id="btnConnect" style="width:auto">연결 / grantAccess</button>
+  <button id="btnDisconnect" style="width:auto">해제</button>
+</header>
+
+<main>
+  <!-- ============================================================ drive -->
+  <section>
+    <h2>조종</h2>
+    <div id="pad"><div id="crosshair"></div><div id="knob"></div></div>
+    <div class="row" style="justify-content:space-between">
+      <span class="note">power <b id="padPower">0</b></span>
+      <span class="note">angle <b id="padAngle">0</b></span>
+      <span class="note"><label style="display:inline"><input type="checkbox" id="holdControl" style="width:auto"> 점유 유지(user_control)</label></span>
+    </div>
+    <p class="note">드리그하는 동안 300ms 간격으로 <code>move</code>를 보냅니다. 원본 앱과 같이 조이스틱 명령에는 응답이 없습니다.</p>
+    <hr>
+    <h3>머리</h3>
+    <label>머리 각도 (move-head)</label>
+    <div class="row"><input type="range" id="headAngle" min="-90" max="90" value="0"><button id="btnHead" style="flex:0 0 84px">전송</button></div>
+    <div class="grid">
+      <button data-headdir="1">左转 dir1</button>
+      <button data-headdir="2">右转 dir2</button>
+      <button data-headdir="0">정지 0</button>
+    </div>
+    <p class="note">원본 소켓에는 <code>head-shift</code>가 없습니다 — 클라이언트는 <code>move-head</code>(=MCU의 <code>head-angle</code>)만 쓸 수 있고, <code>head-shift</code>는 얼굴 추적 루프가 내부적으로만 전송합니다.</p>
+    <label>헤드 전원 (d-head-power)</label>
+    <div class="row"><input type="range" id="headPower" min="0" max="100" value="80"><button id="btnHeadPower" style="flex:0 0 84px">송신</button></div>
+    <label>다리 전원 (d-leg-power)</label>
+    <div class="row"><input type="range" id="legPower" min="0" max="100" value="80"><button id="btnLegPower" style="flex:0 0 84px">송신</button></div>
+  </section>
+
+  <!-- ============================================================ modes -->
+  <section>
+    <h2>MCU 모드 <span class="note">mode 0–20</span></h2>
+    <div class="grid" id="modeGrid"></div>
+    <p class="note">충전 중(<code>charging != 0</code>)에는 1·2·3·4·5·9·10·12·15가 거부되고, 이동 계열은 침묵 폐기됩니다.</p>
+    <hr>
+    <h3>부가 장치</h3>
+    <div class="grid">
+      <button data-mode="6">라이트세이버</button>
+      <button data-mode="16">팔</button>
+      <button data-mode="19">proj 레아</button>
+      <button data-mode="20">proj 스카이</button>
+      <button data-projector="0">proj 끄기</button>
+      <button data-mode="17">LCD 짧게</button>
+      <button data-mode="18">LCD 길게</button>
+      <button data-mode="10">댄스</button>
+      <button data-mode="12">한 바퀴</button>
+      <button data-mode="15">고개 젓기</button>
+      <button data-mode="9">순찰</button>
+      <button data-mode="0">정지</button>
+    </div>
+    <hr>
+    <h3>효과음 (play_sound — 로컬 재생)</h3>
+    <div class="row">
+      <select id="soundId"></select>
+      <button id="btnSound" style="flex:0 0 84px">재생</button>
+    </div>
+  </section>
+
+  <!-- ============================================================ lights -->
+  <section>
+    <h2>LED / LCD 채널</h2>
+    <p class="note">각 채널은 펌웨어 이펙트 인덱스입니다. <code>0</code>=NONE(변경 없음), <code>−1</code>=키 생략.</p>
+    <div class="row" id="ledPickers"></div>
+    <div class="swatches" id="ledSwatches"></div>
+    <div class="grid">
+      <button id="btnLed">led 송신</button>
+      <button id="btnLedAll">전체 0</button>
+      <button data-preset="ready">READY</button>
+      <button data-preset="patrol">PATROL</button>
+      <button data-preset="charge">CHARGING</button>
+    </div>
+    <hr>
+    <h3>LCD (s=짧은 판, l=긴 판 · 1 닫힘 / 2 열림)</h3>
+    <div class="row">
+      <select id="lcdS"><option value="-1">s 생략</option><option value="1">1 닫힘</option><option value="2" selected>2 열림</option></select>
+      <select id="lcdL"><option value="-1">l 생략</option><option value="1">1 닫힘</option><option value="2" selected>2 열림</option></select>
+      <button id="btnLcd" style="flex:0 0 84px">송신</button>
+    </div>
+  </section>
+
+  <!-- ============================================================ state -->
+  <section>
+    <h2>로봇 상태 <span class="note">gin push</span></h2>
+    <div id="stats"></div>
+    <hr>
+    <h3>설정 토글</h3>
+    <div class="grid">
+      <button id="tgFace">face_detection</button>
+      <button id="tgVoice">voice_recognition</button>
+      <button id="tgMute">mute</button>
+    </div>
+    <h3>이름 변경 <span class="note">16자 제한 → 422</span></h3>
+    <div class="row"><input id="nameInput" maxlength="16" placeholder="새 이름"><button id="btnRename" style="flex:0 0 84px">적용</button></div>
+    <h3>제어/점검</h3>
+    <div class="grid">
+      <button id="btnWdt">reset-wdt</button>
+      <button id="btnResetMcu">reset_mcu</button>
+      <button id="btnGin">gin</button>
+      <button id="btnPower" class="hot">전원 종료</button>
+    </div>
+  </section>
+
+  <!-- ============================================================ wifi -->
+  <section>
+    <h2>Wi-Fi · 페어링</h2>
+    <div class="row"><button id="btnWifiList">getWifiList</button><button id="btnApRefresh" title="AP 토글은 WebSocket 명령이 아니라 본체 버튼(cmd:btn value:2) 경로입니다. 여기서는 상태만 다시 읽습니다.">AP 상태 갱신</button></div>
+    <div id="wifiList" class="note">— 아직 조회하지 않았습니다 —</div>
+    <label>SSID</label><input id="wifiSsid" placeholder="scan 목록에서 클릭 선택됩니다">
+    <label>암호 (wifi_pw)</label><input id="wifiPw" type="text" autocomplete="off">
+    <div class="row"><button id="btnConnectWifi">connectWifi</button></div>
+    <p class="note">비동기 연결은 최대 30초 후 응답이 올 수 있고, 타임아웃이면 응답이 오지 않습니다.</p>
+    <hr>
+    <h3>페어링된 클라이언트</h3>
+    <div class="row"><button id="btnPaired">paired_list</button><button id="btnUnpairAll">전체 해제</button></div>
+    <div id="pairedList" class="note">—</div>
+  </section>
+
+  <!-- ============================================================ video -->
+  <section>
+    <h2>카메라 <span class="note">ws :<span id="videoPortLabel">12121</span> · 바이너리 JPEG</span></h2>
+    <canvas id="video" width="640" height="480" style="width:100%;border-radius:6px;background:#000;aspect-ratio:4/3"></canvas>
+    <div class="row"><button id="btnVideo">영상 연결</button><button id="btnVideoStop">해제</button></div>
+    <p class="note"><span id="videoFps" class="badge">0 fps</span> 뷰어는 하나만 붙을 수 있고, 두 번째는 <code>resultCode 421</code>을 받고 끊깁니다.</p>
+  </section>
+
+  <!-- ============================================================ link -->
+  <section>
+    <h2>연결 설정</h2>
+    <label>커맨드 WebSocket</label>
+    <div class="row"><input id="cmdUrl"><span style="flex:0 0 auto"><span id="cmdHint" class="note"></span></span></div>
+    <label>영상 WebSocket</label><input id="vidUrl">
+    <label>클라이언트 uuid <span class="note">grantAccess 신원 · localStorage 저장</span></label>
+    <input id="uuid">
+    <label>device_name</label><input id="deviceNameInput" value="web-console">
+    <p class="note">접속 후 10초 안에 <code>grantAccess</code>가 도달하지 않으면 서버가 소켓을 닫습니다. AP 모드가 켜져 있거나 이미 페어링된 uuid일 때만 허용됩니다(<code>401</code>).</p>
+  </section>
+
+  <!-- ============================================================ log -->
+  <section style="grid-column:1/-1">
+    <h2>프레임 로그 <button id="btnClear" style="width:auto;float:right;padding:2px 8px">지우기</button></h2>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ transport
+   One JSON object per text frame. Server replies carry resultCode/cmd/seq and a
+   trailing newline; the classic motion commands never reply at all, so nothing
+   may await them. */
+const S = {
+  ws:null, vws:null, seq:0, granted:false, reconnect:null, vreconnect:null,
+  lastGin:null, heldControl:false, holdTimer:null,
+};
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const LS = { uuid:'r2d2.uuid' };
+
+function log(kind, text){
+  const el = $('#log');
+  const t = new Date().toLocaleTimeString('ko-KR',{hour12:false});
+  const line = document.createElement('div');
+  line.className = kind;
+  line.textContent = `${t} ${kind==='out'?'→':kind==='in'?'←':kind==='err'?'!':'#'} ${text}`;
+  el.appendChild(line);
+  while (el.childElementCount > 400) el.removeChild(el.firstChild);
+  el.scrollTop = el.scrollHeight;
+}
+const note = t => log('note', t);
+
+function defaultWsUrl(port){
+  const host = location.hostname || '127.0.0.1';
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${host}:${port}/`;
+}
+
+function send(payload){
+  if (!S.ws || S.ws.readyState !== WebSocket.OPEN){ log('err','커맨드 WebSocket이 연결되어 있지 않습니다'); return null; }
+  const body = Object.assign({}, payload);
+  if (!('seq' in body)) body.seq = ++S.seq;
+  const text = JSON.stringify(body);
+  S.ws.send(text);
+  log('out', text);
+  return body.seq;
+}
+/* Commands that the app answers: anything outside this list is fire-and-forget. */
+const REPLYING = new Set(['grantAccess','getWifiList','connectWifi','face_detection','voice_recognition',
+                          'mute','power','change_name','paired_list','unpair']);
+
+function classic(payload){
+  send(payload);
+  if (!S.granted) note('인증되지 않은 연결입니다 — grantAccess를 먼저 보내면 무시될 수 있습니다');
+}
+
+/* ------------------------------------------------------------------ handshake */
+function connect(){
+  if (S.ws && (S.ws.readyState === WebSocket.OPEN || S.ws.readyState === WebSocket.CONNECTING)) return;
+  const url = $('#cmdUrl').value.trim();
+  note(`연결 시도 ${url}`);
+  S.ws = new WebSocket(url);
+  S.ws.onopen = () => {
+    setLink(true, '연결됨 — grantAccess 대기');
+    // The server closes unvalidated sockets after 10 s, so grant immediately.
+    send({cmd:'grantAccess', uuid:uuidValue(), device_name:$('#deviceNameInput').value.trim() || 'web-console'});
+  };
+  S.ws.onmessage = ev => onFrame(ev.data);
+  S.ws.onerror = () => log('err','커맨드 WebSocket 오류');
+  S.ws.onclose = ev => {
+    S.granted = false; setLink(false, '닫힘' + (ev.reason ? ` (${ev.reason})` : ''));
+    clearTimeout(S.reconnect);
+    S.reconnect = setTimeout(connect, 2500);
+    note('2.5초 후 재연결합니다');
+  };
+}
+function disconnect(){
+  clearTimeout(S.reconnect); S.reconnect = null;
+  if (S.ws) { try{ S.ws.close(); }catch(e){} S.ws = null; }
+  setLink(false, '연결 안 됨');
+}
+function setLink(on, text){
+  $('#wsDot').classList.toggle('on', !!on);
+  $('#wsText').textContent = text;
+}
+
+function onFrame(raw){
+  const text = String(raw).trim();
+  if (!text) return;
+  log('in', text);
+  let m;
+  try { m = JSON.parse(text); }
+  catch (e) { note('JSON 아님(무시): ' + text.slice(0,60)); return; }
+
+  if (m.cmd === 'gin' && m.robot && !('resultCode' in m)) { renderState(m.robot); return; }
+  if ('resultCode' in m){
+    const ok = m.resultCode === 0;
+    if (!ok) log('err', `${m.cmd} 실패 resultCode=${m.resultCode} ${explain(m.resultCode)}`);
+    else note(`${m.cmd} ok${'seq' in m ? ' seq='+m.seq : ''}`);
+    if (m.cmd === 'grantAccess'){
+      S.granted = ok;
+      setLink(ok, ok ? 'grantAccess 승인됨' : 'grantAccess 거부');
+      if (ok){ renderRobot(m.robot); $('#robotName').textContent = m.robot.name || '—'; }
+      else if (m.resultCode === 401 || m.resultCode === 301)
+        note('AP 모드를 켜거나 본체에서 페어링 모드로 들어가야 승인됩니다');
+    }
+    if (m.cmd === 'getWifiList') renderWifi(m);
+    if (m.cmd === 'paired_list' || m.cmd === 'unpair') renderPaired(m.clients || []);
+    if (m.cmd === 'connectWifi' && ok) note('Wi-Fi 연결 시도 — 상태 브로드캐스트를 기다리는 중');
+    if (m.cmd === 'change_name' && ok) $('#robotName').textContent = $('#nameInput').value.trim();
+    return;
+  }
+  if (m.cmd === 'streaming') log('err', `video: resultCode=${m.resultCode}`);
+}
+function explain(code){
+  return ({1:'내부 오류',301:'uuid 없음',401:'미인증',410:'미지원 네트워크',411:'인증 실패',412:'설정 오류',
+           414:'네트워크 없음',421:'영상 사용 중',422:'이름 규칙 위반',423:'클라이언트 없음'})[code] || '';
+}
+
+/* ------------------------------------------------------------------ identity */
+function uuidValue(){
+  let v = $('#uuid').value.trim();
+  if (!v){
+    v = (crypto.randomUUID ? crypto.randomUUID()
+        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = Math.random()*16|0, a = c === 'x' ? r : (r&0x3|0x8); return a.toString(16); }));
+    $('#uuid').value = v;
+  }
+  localStorage.setItem(LS.uuid, v);
+  return v;
+}
+
+/* ------------------------------------------------------------------ state ui */
+const MODE_NAMES = {1:'READY',2:'SLEEP',3:'PAIR',4:'PATROL',5:'USER_CONTROL'};
+function renderRobot(r){
+  if (!r) return;
+  S.lastGin = r;
+  $('#robotName').textContent = r.name || '—';
+  const mode = MODE_NAMES[r.mode] || r.mode;
+  const mb = $('#modeBadge');
+  mb.textContent = `mode ${r.mode} · ${mode}`;
+  mb.className = 'badge' + (r.mode === 2 ? ' warn' : r.mode === 5 ? ' ok' : '');
+  const low = typeof r.battery === 'number' && r.battery > 0 && r.battery < 20;
+  const bb = $('#battBadge');
+  bb.textContent = r.battery < 0 ? 'battery —' : `battery ${r.battery}%${r.charging ? ' ⚡' : ''}`;
+  bb.className = 'badge' + (low ? ' bad' : r.charging ? ' warn' : '');
+
+  const rows = [
+    ['이름 / uuid', `${r.name || '—'} · ${(r.uuid||'').slice(0,8)}…`],
+    ['모드', `${r.mode} (${mode})`],
+    ['배터리', r.battery < 0 ? '미보고' : r.battery + '%'],
+    ['충전', ({0:'충전 아님',1:'충전 중',2:'충전 완료'})[r.charging] ?? r.charging],
+    ['LED 오류', r.error],
+    ['arm / lightsaber', `${bool(r.arm)} / ${bool(r.lightsaber)}`],
+    ['projector', r.projector],
+    ['LCD s / l', `${bool(r.lcd_s)} / ${bool(r.lcd_l)}`],
+    ['face / voice / mute', `${bool(r.face_detection)} / ${bool(r.voice_recognition)} / ${bool(r.mute)}`],
+    ['ap_mode / ssid', `${bool(r.ap_mode)} / ${r.ssid || '—'}`],
+    ['ip', r.ip],
+    ['self_update', `${r.self_update} · ${r.update_dl_progress}%`],
+    ['version / ts', `${r.version} · ${new Date(r.timestamp).toLocaleTimeString('ko-KR',{hour12:false})}`],
+  ];
+  $('#stats').innerHTML = rows.map(([k,v]) =>
+    `<div class="stat"><span class="note">${k}</span><b>${v ?? '—'}</b></div>`).join('');
+  toggleState($('#tgFace'), r.face_detection);
+  toggleState($('#tgVoice'), r.voice_recognition);
+  toggleState($('#tgMute'), r.mute);
+}
+const bool = v => v ? 'ON' : 'OFF';
+function toggleState(el, on){
+  // Class only — rewriting textContent here would eat the button label.
+  el.classList.toggle('hot', !!on);
+}
+function renderState(r){ renderRobot(r); }
+
+/* ------------------------------------------------------------------ wifi/pair */
+function renderWifi(m){
+  const list = (m.wifi_list || []).slice().sort((a,b) => b.rssi - a.rssi);
+  $('#wifiList').innerHTML = list.length
+    ? list.map(w => `<div class="stat"><a href="#" data-ssid="${esc(w.ssid)}">${esc(w.ssid)}</a><b>${w.rssi}</b></div>`).join('')
+    : '<div class="note">목록 없음 — scan 권한/네트워크 관리자를 확인하세요</div>';
+  note(`currentSSID=${m.currentSSID || '—'}`);
+  $$('#wifiList a[data-ssid]').forEach(a => a.onclick = e => { e.preventDefault(); $('#wifiSsid').value = a.dataset.ssid; });
+}
+function renderPaired(clients){
+  $('#pairedList').innerHTML = clients.length ? clients.map(c =>
+    `<div class="stat"><span>${esc(c.device_name || '')} · ${(c.uuid||'').slice(0,8)}…</span>
+       <button data-unpair="${esc(c.uuid)}" style="width:auto;padding:1px 8px">해제</button></div>`).join('')
+    : '<div class="note">페어링된 클라이언트 없음</div>';
+  $$('#pairedList button[data-unpair]').forEach(b => b.onclick = () => send({cmd:'unpair', uuid:b.dataset.unpair}));
+}
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ------------------------------------------------------------------ joystick */
+const PAD = {size:190, r:95, timer:null};
+function padUpdate(ev){
+  const box = $('#pad').getBoundingClientRect();
+  const cx = box.left + box.width/2, cy = box.top + box.height/2;
+  const p = ev.touches ? ev.touches[0] : ev;
+  let dx = p.clientX - cx, dy = p.clientY - cy;
+  const dist = Math.min(Math.hypot(dx, dy), PAD.r);
+  const ang = Math.atan2(dy, dx);
+  $('#knob').style.left = (50 + Math.cos(ang)*dist/PAD.r*50) + '%';
+  $('#knob').style.top  = (50 + Math.sin(ang)*dist/PAD.r*50) + '%';
+  const power = Math.round(dist / PAD.r * 100);
+  // Angle convention matches the MCU: 0 forward, 180 reverse, ±90 lateral.
+  const deg = -Math.round(ang * 180 / Math.PI);
+  const angle = Math.abs(deg) <= 22 ? 0 : Math.abs(deg) >= 158 ? 180 : (deg > 0 ? 90 : -90);
+  $('#padPower').textContent = power; $('#padAngle').textContent = angle;
+  return {power, angle};
+}
+let lastPad = {power:0, angle:0};
+function padStart(ev){
+  ev.preventDefault();
+  if ($('#holdControl').checked) holdControl(true);
+  lastPad = padUpdate(ev);                   // a press must act, not wait for a move
+  const tick = () => {
+    if (lastPad.power > 0) classic({cmd:'move', power:lastPad.power, angle:lastPad.angle});
+  };
+  tick();
+  PAD.timer = setInterval(tick, 300);        // the app's joystick interval
+}
+function padMove(ev){ ev.preventDefault(); lastPad = padUpdate(ev); }
+function padEnd(){
+  clearInterval(PAD.timer); PAD.timer = null;
+  lastPad = {power:0, angle:0};
+  classic({cmd:'move', power:0, angle:0});
+  $('#knob').style.left = $('#knob').style.top = '50%';
+  $('#padPower').textContent = '0';
+  if ($('#holdControl').checked) holdControl(false);
+}
+function holdControl(on){
+  if (!on && !S.heldControl) return;
+  S.heldControl = on;
+  classic({cmd:'user_control', enable:on});   // no reply in the app
+  clearInterval(S.holdTimer);
+  if (on){
+    // The server auto-releases control after 12 s, so refresh at 5 s.
+    S.holdTimer = setInterval(() => classic({cmd:'user_control', enable:true}), 5000);
+    note('user_control 점유 (12초 후 자동 해제, 5초마다 갱신)');
+  } else { clearInterval(S.holdTimer); S.holdTimer = null; note('user_control 해제'); }
+}
+
+/* ------------------------------------------------------------------ video */
+function connectVideo(){
+  if (S.vws) return;
+  const url = $('#vidUrl').value.trim();
+  S.vws = new WebSocket(url);
+  S.vws.binaryType = 'arraybuffer';
+  const canvas = $('#video'), ctx = canvas.getContext('2d');
+  let frames = 0, fpsAt = performance.now();
+  S.vws.onopen = () => { $('#vsDot').classList.add('on'); note('video 열림'); };
+  S.vws.onmessage = async ev => {
+    if (typeof ev.data === 'string'){
+      const t = ev.data.trim();
+      if (t.startsWith('{')){ const m = JSON.parse(t); log('err', `video ${m.cmd}: ${m.resultCode} ${explain(m.resultCode)}`); }
+      return;                                    // "enter video socket"
+    }
+    const blob = new Blob([ev.data], {type:'image/jpeg'});
+    try {
+      const bmp = await createImageBitmap(blob);
+      ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+      frames++;
+      const now = performance.now();
+      if (now - fpsAt > 1000){ $('#videoFps').textContent = `${Math.round(frames*1000/(now-fpsAt))} fps`; frames = 0; fpsAt = now; }
+    } catch (e){ /* truncated frame */ }
+  };
+  S.vws.onclose = () => {
+    $('#vsDot').classList.remove('on'); S.vws = null;
+    clearTimeout(S.vreconnect);
+    S.vreconnect = setTimeout(connectVideo, 3000);
+  };
+  S.vws.onerror = () => log('err','video WebSocket 오류');
+}
+function stopVideo(){ clearTimeout(S.vreconnect); if (S.vws){ try{ S.vws.close(); }catch(e){} S.vws = null; } }
+
+/* ------------------------------------------------------------------ build ui */
+const MCU_MODES = [
+  [0,'정지'],[1,'기상'],[2,'제자리회전'],[3,'좌회전'],[4,'우회전'],[5,'전진'],[6,'라이트세이버'],
+  [7,'누구?'],[8,'미인식'],[9,'순찰'],[10,'댄스'],[11,'미인식11'],[12,'한 바퀴'],[13,'LCD 앞'],
+  [14,'LCD 뒤'],[15,'고개젓기'],[16,'팔'],[17,'LCD 짧게'],[18,'LCD 길게'],[19,'proj 레아'],[20,'proj 스카이'],
+];
+$('#modeGrid').innerHTML = MCU_MODES.map(([n,l]) => `<button data-mode="${n}">${n} ${l}</button>`).join('');
+$$('[data-mode]').forEach(b => b.onclick = () => classic({cmd:'mode', mode:+b.dataset.mode}));
+$$('[data-projector]').forEach(b => b.onclick = () => classic({cmd:'projector', mode:+b.dataset.projector}));
+$$('[data-headdir]').forEach(b => b.onclick = () => classic({cmd:'head-dir', dir:+b.dataset.headdir}));
+
+const SOUNDS = [[0,'pulling_it_together'],[1,'sing_song_response'],[2,'abrupt_burst'],[3,'alarmed_thrill'],
+ [4,'building_freak_out'],[5,'curt_reply'],[6,'danger_danger'],[7,'happiness_confirmation'],
+ [8,'happy_three_chirp'],[9,'lonely_hello'],[10,'lonely_singing'],[11,'nagging_whine'],[12,'short_raspberry'],
+ [13,'startled_three_tone'],[14,'startled_whoop'],[15,'stifled_laugh'],[16,'uncertain_two_tone'],
+ [17,'unconvinced_grumbling'],[18,'upset_two_tone'],[100,'starwar01'],[101,'starwar03'],[301,'angle'],[302,'stark']];
+$('#soundId').innerHTML = SOUNDS.map(([id,name]) => `<option value="${id}">${id} · ${name}</option>`).join('');
+
+const EFFECTS = [[0,'0 NONE'],[1,'1 OFF'],[2,'2 ON'],[3,'3 SF1'],[4,'4 SF2'],[5,'5 FF1'],[6,'6 FF2']];
+$('#ledPickers').innerHTML = ['r','b','y','g'].map(ch =>
+  `<div style="flex:1"><label>${ch.toUpperCase()}</label><select data-led="${ch}">
+     <option value="-1">생략</option>${EFFECTS.map(([v,l])=>`<option value="${v}" ${ch==='r'&&v===2?'selected':''}>${l}</option>`).join('')}
+   </select></div>`).join('');
+function ledValues(){
+  const v = {};
+  $$('[data-led]').forEach(s => v[s.dataset.led] = +s.value);
+  return v;
+}
+function paintSwatches(){
+  const rgb = {r:[255,60,60], b:[80,140,255], y:[255,210,70], g:[110,230,110]};
+  $('#ledSwatches').innerHTML = Object.entries(ledValues()).map(([ch,val]) => {
+    const on = val > 0;
+    const c = rgb[ch].map(x => on ? x : Math.round(x*0.15));
+    return `<div class="sw" title="${ch}=${val}" style="background:rgb(${c.join(',')})"></div>`;
+  }).join('');
+}
+$$('[data-led]').forEach(s => s.onchange = paintSwatches);
+$('#btnLed').onclick = () => { const v = ledValues(); classic({cmd:'led', ...v}); };
+$('#btnLedAll').onclick = () => { $$('[data-led]').forEach(s => s.value = 0); paintSwatches(); classic({cmd:'led', r:0,b:0,y:0,g:0}); };
+const PRESETS = { ready:{r:2,b:2,y:1,g:2}, patrol:{r:3,b:4,y:-1,g:-1}, charge:{r:3,b:3,y:-1,g:-1} };
+$$('[data-preset]').forEach(b => b.onclick = () => {
+  const p = PRESETS[b.dataset.preset];
+  $$('[data-led]').forEach(s => { if (p[s.dataset.led] !== -1) s.value = p[s.dataset.led]; });
+  paintSwatches(); classic({cmd:'led', ...p});
+});
+paintSwatches();
+
+$('#btnSound').onclick = () => classic({cmd:'play_sound', sound_id:+$('#soundId').value, interrupt:1});
+$('#btnHead').onclick = () => classic({cmd:'move-head', angle:+$('#headAngle').value});
+$('#btnHeadPower').onclick = () => classic({cmd:'d-head-power', power:+$('#headPower').value});
+$('#btnLegPower').onclick = () => classic({cmd:'d-leg-power', power:+$('#legPower').value});
+$('#btnLcd').onclick = () => classic({cmd:'lcd', s:+$('#lcdS').value, l:+$('#lcdL').value});
+$('#btnWdt').onclick = () => classic({cmd:'reset-wdt'});
+$('#btnResetMcu').onclick = () => {
+  if (confirm('reset_mcu는 JSON이 아닌 원시 프레임 \'\' 을 MCU에 씁니다. 계속할까요?')) classic({cmd:'reset_mcu'});
+};
+$('#btnGin').onclick = () => classic({cmd:'gin'});
+$('#btnPower').onclick = () => {
+  if (confirm('전원 종료(power)는 MCU에 shut-down을 보내고, 호스트 종료 설정이 켜져 있으면 보드도 내립니다.'))
+    send({cmd:'power'});
+};
+$('#tgFace').onclick  = () => send({cmd:'face_detection',  enable:!(S.lastGin||{}).face_detection});
+$('#tgVoice').onclick = () => send({cmd:'voice_recognition', enable:!(S.lastGin||{}).voice_recognition});
+$('#tgMute').onclick  = () => send({cmd:'mute',            enable:!(S.lastGin||{}).mute});
+$('#btnRename').onclick = () => send({cmd:'change_name', new_name:$('#nameInput').value.trim()});
+$('#btnWifiList').onclick = () => send({cmd:'getWifiList'});
+// There is no ap_mode command on this socket; the AP toggle lives on the robot's
+// own button. Re-read the state instead of pretending to toggle it.
+$('#btnApRefresh').onclick = () => { classic({cmd:'gin'}); send({cmd:'getWifiList'}); };
+$('#btnConnectWifi').onclick = () => send({cmd:'connectWifi', ssid:$('#wifiSsid').value.trim(), wifi_pw:$('#wifiPw').value});
+$('#btnPaired').onclick = () => send({cmd:'paired_list'});
+$('#btnUnpairAll').onclick = () => { if (confirm('모든 클라이언트 페어링을 해제합니다')) send({cmd:'unpair'}); };
+$('#btnConnect').onclick = connect;
+$('#btnDisconnect').onclick = () => { disconnect(); stopVideo(); };
+$('#btnVideo').onclick = connectVideo;
+$('#btnVideoStop').onclick = stopVideo;
+$('#btnClear').onclick = () => { $('#log').innerHTML = ''; };
+$('#pad').addEventListener('mousedown', padStart);
+$('#pad').addEventListener('touchstart', padStart, {passive:false});
+window.addEventListener('mousemove', e => { if (PAD.timer) padMove(e); });
+window.addEventListener('touchmove', e => { if (PAD.timer) padMove(e); }, {passive:false});
+window.addEventListener('mouseup', padEnd);
+window.addEventListener('touchend', padEnd);
+window.addEventListener('keydown', e => { if (e.key === 'Escape'){ padEnd(); } });
+
+/* Ports come from the host page URL so the console works from any address. */
+$('#cmdUrl').value = defaultWsUrl(8887);
+$('#vidUrl').value = defaultWsUrl(12121);
+$('#uuid').value = localStorage.getItem(LS.uuid) || '';
+$('#uuid').addEventListener('change', () => localStorage.setItem(LS.uuid, $('#uuid').value.trim()));
+$('#videoPortLabel').textContent = (new URL($('#vidUrl').value)).port || '12121';
+if (!$('#uuid').value) uuidValue();
+note('연결 버튼을 누르세요. AP 모드/페어링 모드에서만 grantAccess가 승인됩니다.');
+</script>
+</body>
+</html>

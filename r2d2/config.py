@@ -65,8 +65,17 @@ class Config:
     mock_camera: bool = _env("R2D2_MOCK_CAMERA", False)
 
     # --- UDP discovery --------------------------------------------------------
+    # UDPBroadcastService.SERVER_PORT; the announce goes to 255.255.255.255:8090
+    # every 3 s.
     discovery_enabled: bool = _env("R2D2_DISCOVERY", True)
-    discovery_port: int = _env("R2D2_DISCOVERY_PORT", 8889)
+    discovery_port: int = _env("R2D2_DISCOVERY_PORT", 8090)
+
+    # --- Browser console ------------------------------------------------------
+    # Serves the static page in r2d2/web/; the page itself dials the two
+    # WebSocket ports above, so this server carries no protocol of its own.
+    web_enabled: bool = _env("R2D2_WEB", True)
+    web_host: str = _env("R2D2_WEB_HOST", "0.0.0.0")
+    web_port: int = _env("R2D2_WEB_PORT", 8080)
 
     # --- Behaviour switches ---------------------------------------------------
     face_detection_enabled: bool = _env("R2D2_FACE_DETECTION", True)

@@ -33,6 +33,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--baudrate", type=int, help="serial baud rate (default: 115200)")
     parser.add_argument("--ws-port", type=int, help="websocket command port (default: 8887)")
     parser.add_argument("--stream-port", type=int, help="video websocket port (default: 12121)")
+    parser.add_argument("--web-port", type=int, help="browser console http port (default: 8080)")
+    parser.add_argument("--no-web", action="store_true", help="do not serve the browser console")
     parser.add_argument("--camera", help="cv2 camera index or device path")
     parser.add_argument("--sound-dir", help="directory holding the .mp3 sound effects")
     parser.add_argument("--mock", action="store_true", help="run without serial, camera or audio hardware")
@@ -56,6 +58,10 @@ def apply_args(config: Config, args: argparse.Namespace) -> Config:
         config.ws_port = args.ws_port
     if args.stream_port:
         config.stream_port = args.stream_port
+    if args.web_port:
+        config.web_port = args.web_port
+    if args.no_web:
+        config.web_enabled = False
     if args.sound_dir:
         config.sound_dir = args.sound_dir
     if args.camera is not None:

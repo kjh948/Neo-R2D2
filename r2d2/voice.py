@@ -193,76 +193,111 @@ class VoiceToEventHandler:
 
 
 class VoiceRecognizer:
-    """Keyword-spotting front end with a 15 s auto-stop, like the app's timer.
+    """Port of ``VoiceRecognizer``'s three-state listening machine.
 
-    PocketSphinx needs its model directory and a microphone, which the target
-    image may not have; recognisers are therefore pluggable. ``feed_keyword``
-    is the seam used by tests and by an external STT bridge that pushes phrases
-    over the same path the on-device decoder would.
+    PocketSphinx needs a model directory and a microphone, neither of which this
+    host build assumes, so the decoder is pluggable and ``feed_keyword`` is the
+    seam: tests and an external STT bridge push spotted phrases through the same
+    path the on-device keyword search would.
+
+    The state machine is what actually gates behaviour, so it is reproduced
+    rather than simplified:
+
+    * ``MODE_DISABLE`` (-1) — the initial value and the result of ``stop()``;
+      phrases are dropped.
+    * ``MODE_WAIT`` (0) — what ``start()`` enters. Only a wake-up phrase does
+      anything here; any other phrase is **ignored** and re-arms waiting.
+    * ``MODE_WAKE`` (1) — a wake word puts a 15 s window on the clock, and every
+      phrase heard inside it executes and re-opens the window.
+
+    When the window lapses the recognizer falls back to ``MODE_WAIT`` (it keeps
+    listening) and fires ``endVoiceEvent()``, which restores the lights; it does
+    **not** stop. Only sleep/patrol/pair stop it outright.
     """
+
+    MODE_DISABLE = -1
+    MODE_WAIT = 0
+    MODE_WAKE = 1
 
     def __init__(self, handler: VoiceToEventHandler, timeout: float = LISTEN_TIMEOUT) -> None:
         self.handler = handler
         self.timeout = timeout
-        self.is_active = False
+        self.current_mode = self.MODE_DISABLE
         self.is_voice_recognition_mode = False
-        self.current_mode = 1
         self._timer: Optional[threading.Timer] = None
         self._lock = threading.RLock()
-        self._stop = threading.Event()
 
+    @property
+    def is_active(self) -> bool:
+        """True while the recognizer is listening in either WAIT or WAKE."""
+        return self.current_mode != self.MODE_DISABLE
+
+    # -- mode machine ---------------------------------------------------------
     def start(self) -> bool:
         with self._lock:
-            if self.is_active:
-                LOG.debug("voice recognition already started")
+            if self.current_mode != self.MODE_DISABLE:
+                LOG.debug("Voice Recognition started before")
                 return False
-            self.is_active = True
-            self.is_voice_recognition_mode = True
-            self._stop.clear()
-            self._arm_timeout()
-        LOG.info("start listening...")
+            self._switch_mode(self.MODE_WAIT)
+        LOG.info("Voice Recognizer start.")
         return True
 
     def stop(self) -> None:
         with self._lock:
-            if not self.is_active:
-                return
-            self.is_active = False
+            self._switch_mode(self.MODE_DISABLE)
             self.is_voice_recognition_mode = False
-            if self._timer is not None:
-                self._timer.cancel()
-                self._timer = None
+        # ``VoiceRecognizer.stop()`` also calls EventHandler.restoreLight(),
+        # because the voice-session LED (back 202) would otherwise stick on.
+        try:
+            self.handler.events.restore_light()
+        except Exception:  # pragma: no cover - mirrors the app's catch-free call
+            LOG.exception("restore_light on stop failed")
         LOG.info("Voice Recognizer stop.")
 
-    def _arm_timeout(self) -> None:
-        with self._lock:
-            if self._timer is not None:
-                self._timer.cancel()
+    def _switch_mode(self, mode: int) -> None:
+        """Caller must hold ``self._lock`` (or be inside a fresh timer)."""
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
+        self.current_mode = mode
+        LOG.debug("voice mode -> %d", mode)
+        if mode == self.MODE_WAKE:
             timer = threading.Timer(self.timeout, self._on_timeout)
             timer.daemon = True
             self._timer = timer
             timer.start()
 
     def _on_timeout(self) -> None:
-        LOG.debug("Voice Recognizer Timer triggered")
-        self.stop()
+        with self._lock:
+            if self.current_mode == self.MODE_DISABLE:
+                return
+            self._switch_mode(self.MODE_WAIT)
+            self.is_voice_recognition_mode = False
+        LOG.debug("MODE_WAKE TIMEOUT, switch to MODE_WAIT")
         self.handler.end_voice_event()
 
+    # -- decoder seam ---------------------------------------------------------
     def feed_keyword(self, phrase: str) -> bool:
-        """Deliver a spotted phrase; returns whether a command matched."""
+        """Deliver a spotted phrase; returns whether it drove a behaviour.
+
+        Matches ``onRecognizeKeyword``: a phrase is only executed when the
+        recognizer is already in ``MODE_WAKE``, or when the phrase itself is a
+        wake-up word. Everything else re-arms waiting without acting.
+        """
         with self._lock:
-            active = self.is_active
-        if not active:
-            LOG.debug("ignoring %r: recognizer idle", phrase)
+            mode = self.current_mode
+            if mode == self.MODE_DISABLE:
+                LOG.debug("ignoring %r: voice recognition disabled", phrase)
+                return False
+            command = self.handler.get_command(phrase)
+            if mode == self.MODE_WAKE or command == VoiceCommand.WAKE_UP:
+                self.is_voice_recognition_mode = True
+                LOG.info("got keyword: %s", phrase)
+                self.handler.voice_to_event(phrase)
+                # ``voiceToEvent`` returns true on every path in the app, so the
+                # window is always re-opened here.
+                self._switch_mode(self.MODE_WAKE)
+                return True
+            LOG.info("ignoring %r while waiting for a wake word", phrase)
+            self._switch_mode(self.MODE_WAIT)
             return False
-        command = self.handler.get_command(phrase)
-        is_wakeup = command == VoiceCommand.WAKE_UP
-        if self.current_mode == 1 or is_wakeup:
-            LOG.info("got keyword: %s", phrase)
-            self.handler.voice_to_event(phrase)
-            self._arm_timeout()
-            return True
-        LOG.info("got keyword in command mode: %s", phrase)
-        self.handler.voice_to_event(phrase)
-        self._arm_timeout()
-        return command is not None

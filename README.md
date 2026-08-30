@@ -16,5 +16,9 @@ Hacked R2D2 deagostini
 
 ```bash
 python3 -m r2d2 --mock                              # run without hardware
-python3 -m unittest discover -s tests -t tests      # 144 tests
-``` 
+python3 -m unittest discover -s tests -t tests      # 164 tests
+```
+
+Open the browser console at `http://<robot-ip>:8080/` (served automatically;
+`--no-web` to disable). Ports the host uses: `8887` command WebSocket,
+`12121` video WebSocket, `8090` UDP discovery, `8080` console. 

@@ -130,48 +130,83 @@ class CommandMappingTest(unittest.TestCase):
 
 
 class RecognizerTest(unittest.TestCase):
+    """The three-state listening machine from ``VoiceRecognizer.java``.
+
+    ``start()`` lands in MODE_WAIT, where only a wake word does anything; a wake
+    word opens a 15 s MODE_WAKE window in which every phrase executes.
+    """
+
     def setUp(self):
         stack = build_robot()
         self.stack = stack
         self.handler = VoiceToEventHandler(stack["events"], None)
         self.recognizer = VoiceRecognizer(self.handler, timeout=0.2)
+        self.restored = []
+        stack["events"].restore_light = lambda: self.restored.append("restore")
+        stack["events"].end_voice = lambda: self.restored.append("end_voice")
 
     def tearDown(self):
         self.recognizer.stop()
-        stack = getattr(self, "stack", None)
-        if stack:
-            stack["events"].close()
-            stack["transport"].close()
+        self.stack["events"].close()
+        self.stack["transport"].close()
 
-    def test_start_marks_voice_recognition_mode_for_the_light_ladder(self):
+    def test_start_enters_wait_without_claiming_a_voice_session(self):
+        self.assertEqual(self.recognizer.current_mode, VoiceRecognizer.MODE_DISABLE, "initial state")
         self.assertTrue(self.recognizer.start())
-        self.assertTrue(self.recognizer.is_voice_recognition_mode)
-        self.assertFalse(self.recognizer.start(), "a second start is a no-op")
+        self.assertEqual(self.recognizer.current_mode, VoiceRecognizer.MODE_WAIT)
+        # isVoiceRecognitionMode (which drives the back-LED 202) only turns on
+        # once a phrase actually lands.
+        self.assertFalse(self.recognizer.is_voice_recognition_mode)
+        self.assertFalse(self.recognizer.start(), "a second start is refused")
 
-    def test_keyword_reaches_the_handler_and_rearms_the_timer(self):
-        # ``turn left`` runs a SoundJob then a 700 ms-delayed ModeJob, so the
-        # auto-stop window has to outlast the animation for this assertion.
-        self.recognizer.timeout = 3.0
-        arms = []
-        original = self.recognizer._arm_timeout
-        self.recognizer._arm_timeout = lambda: (arms.append(1), original())[1]
+    def test_non_wake_phrase_is_ignored_while_waiting(self):
         self.recognizer.start()
+        self.stack["transport"].clear()
+        self.assertFalse(self.recognizer.feed_keyword("turn left"))
+        self.assertEqual(self.recognizer.current_mode, VoiceRecognizer.MODE_WAIT)
+        time.sleep(0.3)
+        self.assertEqual(self.stack["transport"].raw, [], "the robot must not move")
+
+    def test_wake_word_opens_the_window_for_other_commands(self):
+        self.recognizer.timeout = 3.0
+        self.recognizer.start()
+        self.assertTrue(self.recognizer.feed_keyword("r two d two"))
+        self.assertEqual(self.recognizer.current_mode, VoiceRecognizer.MODE_WAKE)
+        self.assertTrue(self.recognizer.is_voice_recognition_mode)
+        self.stack["transport"].clear()
         self.assertTrue(self.recognizer.feed_keyword("turn left"))
         self.assertTrue(
             wait_until(lambda: '{"cmd":"mode","mode":3}' in self.stack["transport"].raw, timeout=2.0)
         )
-        self.assertEqual(len(arms), 2, "start plus one keyword must arm the auto-stop twice")
-        self.assertTrue(self.recognizer.is_active)
 
-    def test_it_stops_itself_after_the_timeout(self):
+    def test_every_phrase_inside_the_window_reopens_it(self):
+        self.recognizer.timeout = 0.4
         self.recognizer.start()
-        self.assertTrue(wait_until(lambda: not self.recognizer.is_active, timeout=1.5))
-        self.assertFalse(self.recognizer.feed_keyword("turn left"), "idle recognizer ignores input")
+        self.recognizer.feed_keyword("bonjour")
+        first_deadline = self.recognizer._timer
+        time.sleep(0.25)
+        self.recognizer.feed_keyword("patrol")
+        self.assertIsNotNone(self.recognizer._timer)
+        self.assertIsNot(self.recognizer._timer, first_deadline, "the 15 s window must restart")
+        self.assertEqual(self.recognizer.current_mode, VoiceRecognizer.MODE_WAKE)
 
-    def test_wake_up_is_recognised_while_asleep(self):
-        self.recognizer.current_mode = 2
+    def test_the_window_lapses_back_to_wait_without_stopping(self):
         self.recognizer.start()
-        self.assertTrue(self.recognizer.feed_keyword("r two d two"))
+        self.recognizer.feed_keyword("bonjour")
+        self.assertTrue(wait_until(lambda: self.recognizer.current_mode == VoiceRecognizer.MODE_WAIT,
+                                   timeout=2.0))
+        self.assertTrue(self.recognizer.is_active, "it keeps listening; only sleep/patrol/pair stop it")
+        self.assertFalse(self.recognizer.is_voice_recognition_mode)
+        self.assertIn("end_voice", self.restored, "endVoiceEvent() restores the lights")
+
+    def test_stop_disables_and_restores_the_lights(self):
+        self.recognizer.start()
+        self.recognizer.feed_keyword("bonjour")
+        self.recognizer.stop()
+        self.assertEqual(self.recognizer.current_mode, VoiceRecognizer.MODE_DISABLE)
+        self.assertFalse(self.recognizer.is_active)
+        self.assertIn("restore", self.restored)
+        self.assertFalse(self.recognizer.feed_keyword("bonjour"), "disabled recognizer drops input")
 
 
 if __name__ == "__main__":
