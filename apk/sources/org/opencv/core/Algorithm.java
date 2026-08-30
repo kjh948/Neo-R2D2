@@ -1,0 +1,39 @@
+package org.opencv.core;
+
+/* JADX INFO: loaded from: classes.dex */
+public class Algorithm {
+    protected final long nativeObj;
+
+    private static native void clear_0(long j);
+
+    private static native void delete(long j);
+
+    private static native String getDefaultName_0(long j);
+
+    private static native void save_0(long j, String str);
+
+    protected Algorithm(long addr) {
+        this.nativeObj = addr;
+    }
+
+    public long getNativeObjAddr() {
+        return this.nativeObj;
+    }
+
+    public String getDefaultName() {
+        String retVal = getDefaultName_0(this.nativeObj);
+        return retVal;
+    }
+
+    public void clear() {
+        clear_0(this.nativeObj);
+    }
+
+    public void save(String filename) {
+        save_0(this.nativeObj, filename);
+    }
+
+    protected void finalize() throws Throwable {
+        delete(this.nativeObj);
+    }
+}

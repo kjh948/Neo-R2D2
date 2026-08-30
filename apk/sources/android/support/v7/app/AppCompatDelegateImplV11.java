@@ -1,0 +1,27 @@
+package android.support.v7.app;
+
+import android.annotation.TargetApi;
+import android.content.Context;
+import android.support.annotation.RequiresApi;
+import android.util.AttributeSet;
+import android.view.View;
+import android.view.Window;
+
+/* JADX INFO: loaded from: classes.dex */
+@RequiresApi(11)
+@TargetApi(11)
+class AppCompatDelegateImplV11 extends AppCompatDelegateImplV9 {
+    AppCompatDelegateImplV11(Context context, Window window, AppCompatCallback callback) {
+        super(context, window, callback);
+    }
+
+    @Override // android.support.v7.app.AppCompatDelegateImplV9, android.support.v7.app.AppCompatDelegate
+    public boolean hasWindowFeature(int featureId) {
+        return super.hasWindowFeature(featureId) || this.mWindow.hasFeature(featureId);
+    }
+
+    @Override // android.support.v7.app.AppCompatDelegateImplV9
+    View callActivityOnCreateView(View parent, String name, Context context, AttributeSet attrs) {
+        return null;
+    }
+}

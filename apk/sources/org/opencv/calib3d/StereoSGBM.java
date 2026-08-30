@@ -1,0 +1,99 @@
+package org.opencv.calib3d;
+
+/* JADX INFO: loaded from: classes.dex */
+public class StereoSGBM extends StereoMatcher {
+    public static final int MODE_HH = 1;
+    public static final int MODE_HH4 = 3;
+    public static final int MODE_SGBM = 0;
+    public static final int MODE_SGBM_3WAY = 2;
+
+    private static native long create_0(int i, int i2, int i3, int i4, int i5, int i6, int i7, int i8, int i9, int i10, int i11);
+
+    private static native long create_1();
+
+    private static native void delete(long j);
+
+    private static native int getMode_0(long j);
+
+    private static native int getP1_0(long j);
+
+    private static native int getP2_0(long j);
+
+    private static native int getPreFilterCap_0(long j);
+
+    private static native int getUniquenessRatio_0(long j);
+
+    private static native void setMode_0(long j, int i);
+
+    private static native void setP1_0(long j, int i);
+
+    private static native void setP2_0(long j, int i);
+
+    private static native void setPreFilterCap_0(long j, int i);
+
+    private static native void setUniquenessRatio_0(long j, int i);
+
+    protected StereoSGBM(long addr) {
+        super(addr);
+    }
+
+    public static StereoSGBM create(int minDisparity, int numDisparities, int blockSize, int P1, int P2, int disp12MaxDiff, int preFilterCap, int uniquenessRatio, int speckleWindowSize, int speckleRange, int mode) {
+        StereoSGBM retVal = new StereoSGBM(create_0(minDisparity, numDisparities, blockSize, P1, P2, disp12MaxDiff, preFilterCap, uniquenessRatio, speckleWindowSize, speckleRange, mode));
+        return retVal;
+    }
+
+    public static StereoSGBM create() {
+        StereoSGBM retVal = new StereoSGBM(create_1());
+        return retVal;
+    }
+
+    public int getMode() {
+        int retVal = getMode_0(this.nativeObj);
+        return retVal;
+    }
+
+    public int getP1() {
+        int retVal = getP1_0(this.nativeObj);
+        return retVal;
+    }
+
+    public int getP2() {
+        int retVal = getP2_0(this.nativeObj);
+        return retVal;
+    }
+
+    public int getPreFilterCap() {
+        int retVal = getPreFilterCap_0(this.nativeObj);
+        return retVal;
+    }
+
+    public int getUniquenessRatio() {
+        int retVal = getUniquenessRatio_0(this.nativeObj);
+        return retVal;
+    }
+
+    public void setMode(int mode) {
+        setMode_0(this.nativeObj, mode);
+    }
+
+    public void setP1(int P1) {
+        setP1_0(this.nativeObj, P1);
+    }
+
+    public void setP2(int P2) {
+        setP2_0(this.nativeObj, P2);
+    }
+
+    public void setPreFilterCap(int preFilterCap) {
+        setPreFilterCap_0(this.nativeObj, preFilterCap);
+    }
+
+    public void setUniquenessRatio(int uniquenessRatio) {
+        setUniquenessRatio_0(this.nativeObj, uniquenessRatio);
+    }
+
+    @Override // org.opencv.calib3d.StereoMatcher, org.opencv.core.Algorithm
+    protected void finalize() throws Throwable {
+        delete(this.nativeObj);
+    }
+}

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <array name="voice_angle">
+    </array>
+    <array name="voice_arm">
+    </array>
+    <array name="voice_dance">
+    </array>
+    <array name="voice_go_forward">
+    </array>
+    <array name="voice_lightsaber">
+    </array>
+    <array name="voice_make_some_noice">
+    </array>
+    <array name="voice_patrol_now">
+    </array>
+    <array name="voice_project_princess_leia">
+    </array>
+    <array name="voice_project_skywalker">
+    </array>
+    <array name="voice_shake_your_head">
+    </array>
+    <array name="voice_stark">
+    </array>
+    <array name="voice_stop">
+    </array>
+    <array name="voice_turn_around">
+    </array>
+    <array name="voice_turn_left">
+        <item>ひだりにまがって</item>
+    </array>
+    <array name="voice_turn_right">
+        <item>みぎにまがって</item>
+    </array>
+    <array name="voice_wake_up_phrase">
+        <item>2d2</item>
+        <item>アル2</item>
+        <item>こんにちは</item>
+    </array>
+    <array name="voice_walk_a_circle">
+    </array>
+    <array name="voice_who_are_you">
+    </array>
+</resources>

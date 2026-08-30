@@ -1,0 +1,21 @@
+package android.support.v4.view;
+
+import android.annotation.TargetApi;
+import android.support.annotation.RequiresApi;
+import android.view.VelocityTracker;
+
+/* JADX INFO: loaded from: classes.dex */
+@RequiresApi(11)
+@TargetApi(11)
+class VelocityTrackerCompatHoneycomb {
+    VelocityTrackerCompatHoneycomb() {
+    }
+
+    public static float getXVelocity(VelocityTracker tracker, int pointerId) {
+        return tracker.getXVelocity(pointerId);
+    }
+
+    public static float getYVelocity(VelocityTracker tracker, int pointerId) {
+        return tracker.getYVelocity(pointerId);
+    }
+}

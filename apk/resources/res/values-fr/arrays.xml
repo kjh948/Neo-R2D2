@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <array name="voice_angle">
+    </array>
+    <array name="voice_arm">
+        <item>bouge les bras</item>
+        <item>bouge les connecteurs</item>
+        <item>bras de liaison</item>
+    </array>
+    <array name="voice_dance">
+        <item>danse s\' il te plaît</item>
+        <item>danse danse</item>
+        <item>va danser</item>
+    </array>
+    <array name="voice_go_forward">
+        <item>avance tout droit</item>
+        <item>va tout droit</item>
+        <item>continue</item>
+    </array>
+    <array name="voice_lightsaber">
+        <item>sabre laser</item>
+        <item>actionnement sabre laser</item>
+    </array>
+    <array name="voice_patrol_now">
+        <item>patrouille</item>
+        <item>va patrouiller</item>
+        <item>contrôle les alentours</item>
+    </array>
+    <array name="voice_project_princess_leia">
+    </array>
+    <array name="voice_project_skywalker">
+    </array>
+    <array name="voice_shake_your_head">
+        <item>secoue la tête</item>
+        <item>dit non</item>
+        <item>négatif</item>
+    </array>
+    <array name="voice_stark">
+    </array>
+    <array name="voice_stop">
+    </array>
+    <array name="voice_turn_around">
+    </array>
+    <array name="voice_turn_left">
+        <item>tourne à gauche</item>
+        <item>virage à gauche</item>
+    </array>
+    <array name="voice_turn_right">
+        <item>tourne à droite</item>
+        <item>virage à droite</item>
+    </array>
+    <array name="voice_wake_up_phrase">
+        <item>salut</item>
+        <item>salut r deux d deux</item>
+        <item>bonjour</item>
+    </array>
+    <array name="voice_walk_a_circle">
+        <item>tourne en rond</item>
+        <item>fais un cercle</item>
+        <item>tourne tourne tourne</item>
+    </array>
+    <array name="voice_who_are_you">
+        <item>qui es-tu</item>
+    </array>
+</resources>

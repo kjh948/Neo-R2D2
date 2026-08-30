@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <array name="voice_angle">
+    </array>
+    <array name="voice_arm">
+        <item>mueve los brazos</item>
+        <item>brazos</item>
+        <item>abre el compartimento</item>
+    </array>
+    <array name="voice_dance">
+        <item>baila por favor</item>
+        <item>baila baila</item>
+        <item>ponte a bailar</item>
+    </array>
+    <array name="voice_go_forward">
+        <item>sigue recto</item>
+        <item>sigue adelante</item>
+        <item>avanza</item>
+    </array>
+    <array name="voice_lightsaber">
+        <item>espada láser</item>
+        <item>usa la espada láser</item>
+    </array>
+    <array name="voice_make_some_noice">
+    </array>
+    <array name="voice_patrol_now">
+        <item>patrulla</item>
+        <item>ponte a patrullar</item>
+        <item>mira alrededor</item>
+    </array>
+    <array name="voice_project_princess_leia">
+    </array>
+    <array name="voice_project_skywalker">
+    </array>
+    <array name="voice_shake_your_head">
+        <item>mueve la cabeza</item>
+        <item>di no</item>
+        <item>negativo</item>
+    </array>
+    <array name="voice_stark">
+    </array>
+    <array name="voice_stop">
+    </array>
+    <array name="voice_turn_around">
+    </array>
+    <array name="voice_turn_left">
+        <item>gira a la izquierda</item>
+        <item>a la izquierda</item>
+        <item>giro izquierda</item>
+    </array>
+    <array name="voice_turn_right">
+        <item>gira a la derecha</item>
+        <item>a la derecha</item>
+        <item>giro derecha</item>
+    </array>
+    <array name="voice_wake_up_phrase">
+        <item>hola</item>
+        <item>hola r 2 d 2</item>
+        <item>hola arturito</item>
+        <item>buenos días</item>
+    </array>
+    <array name="voice_walk_a_circle">
+        <item>muévete en círculos</item>
+        <item>camina en círculos</item>
+        <item>da vueltas</item>
+        <item>gira gira gira</item>
+    </array>
+    <array name="voice_who_are_you">
+        <item>quién eres</item>
+    </array>
+</resources>

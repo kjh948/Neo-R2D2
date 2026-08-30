@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">R2D2 NanoPiSystem</string>
+    <string name="voice_path">en</string>
+</resources>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <array name="voice_angle">
+    </array>
+    <array name="voice_arm">
+        <item>move arms</item>
+        <item>arms</item>
+        <item>spacecraft linkage</item>
+    </array>
+    <array name="voice_dance">
+        <item>dance now</item>
+        <item>dancing dancing</item>
+        <item>go dance</item>
+        <item>dance please</item>
+    </array>
+    <array name="voice_go_forward">
+        <item>go forward</item>
+        <item>go straight</item>
+        <item>go ahead</item>
+        <item>move forward</item>
+    </array>
+    <array name="voice_lightsaber">
+        <item>lightsaber</item>
+        <item>lightsaber action</item>
+    </array>
+    <array name="voice_make_some_noice">
+    </array>
+    <array name="voice_patrol_now">
+        <item>patrol</item>
+        <item>go patrol</item>
+        <item>check around</item>
+    </array>
+    <array name="voice_project_princess_leia">
+    </array>
+    <array name="voice_project_skywalker">
+    </array>
+    <array name="voice_shake_your_head">
+        <item>shake your head</item>
+        <item>say no</item>
+        <item>negative</item>
+    </array>
+    <array name="voice_stark">
+    </array>
+    <array name="voice_stop">
+    </array>
+    <array name="voice_turn_around">
+    </array>
+    <array name="voice_turn_left">
+        <item>turn left</item>
+        <item>left turn</item>
+        <item>rotate left</item>
+    </array>
+    <array name="voice_turn_right">
+        <item>turn right</item>
+        <item>right turn</item>
+        <item>rotate right</item>
+    </array>
+    <array name="voice_wake_up_phrase">
+        <item>r two d two</item>
+        <item>two d two</item>
+        <item>hey r two d two</item>
+        <item>good morning</item>
+        <item>how are you</item>
+    </array>
+    <array name="voice_walk_a_circle">
+        <item>walk a circle</item>
+        <item>give me a circle</item>
+        <item>round round round</item>
+    </array>
+    <array name="voice_who_are_you">
+    </array>
+</resources>

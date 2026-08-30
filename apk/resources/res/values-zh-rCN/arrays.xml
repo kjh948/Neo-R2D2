@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <array name="voice_angle">
+    </array>
+    <array name="voice_arm">
+        <item>打开 手臂</item>
+        <item>伸出 手</item>
+        <item>握 握 手</item>
+        <item>收起 手 臂</item>
+    </array>
+    <array name="voice_dance">
+        <item>跳 舞</item>
+        <item>跳 舞 吧</item>
+        <item>一 起 跳 舞</item>
+        <item>-</item>
+        <item>-</item>
+    </array>
+    <array name="voice_go_forward">
+        <item>向 前 走</item>
+        <item>往 前 走</item>
+        <item>走 向 前</item>
+        <item>快 走</item>
+        <item>-</item>
+    </array>
+    <array name="voice_lightsaber">
+        <item>拿出 激光剑</item>
+        <item>看 看 激光剑</item>
+        <item>拿出 武器</item>
+        <item>看 看 武器</item>
+        <item>收起 激光剑</item>
+        <item>收起 武器</item>
+    </array>
+    <array name="voice_make_some_noice">
+        <item>说 一下</item>
+        <item>讲 个 笑话</item>
+        <item>你 说 什么</item>
+        <item>－</item>
+        <item>-</item>
+    </array>
+    <array name="voice_patrol_now">
+        <item>去 巡逻</item>
+        <item>看 好 这 边</item>
+        <item>守住 这 边</item>
+        <item>-</item>
+        <item>-</item>
+    </array>
+    <array name="voice_project_princess_leia">
+    </array>
+    <array name="voice_project_skywalker">
+    </array>
+    <array name="voice_shake_your_head">
+        <item>摇 一下 头</item>
+        <item>摇 一 摇 头</item>
+        <item>转 一下 头</item>
+        <item>转 一 转 头</item>
+        <item>-</item>
+    </array>
+    <array name="voice_stark">
+    </array>
+    <array name="voice_stop">
+        <item>停止</item>
+        <item>休息 一下</item>
+        <item>停 在 这 里</item>
+        <item>-</item>
+        <item>-</item>
+    </array>
+    <array name="voice_turn_around">
+        <item>看 后面</item>
+        <item>后 转</item>
+        <item>看 后 方</item>
+        <item>-</item>
+        <item>-</item>
+    </array>
+    <array name="voice_turn_left">
+        <item>左 转</item>
+        <item>看 左 方</item>
+        <item>看 左 边</item>
+        <item>-</item>
+        <item>-</item>
+    </array>
+    <array name="voice_turn_right">
+        <item>右 转</item>
+        <item>看 右 方</item>
+        <item>看 右 边</item>
+        <item>-</item>
+        <item>-</item>
+    </array>
+    <array name="voice_wake_up_phrase">
+        <item>r two d two</item>
+        <item>你 好</item>
+        <item>two d two</item>
+        <item>-</item>
+        <item>-</item>
+    </array>
+    <array name="voice_walk_a_circle">
+        <item>走 一 圈</item>
+        <item>转 一 圈</item>
+        <item>绕 一 圈</item>
+        <item>-</item>
+        <item>-</item>
+    </array>
+    <array name="voice_who_are_you">
+        <item>who\'re you</item>
+    </array>
+</resources>
