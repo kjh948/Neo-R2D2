@@ -1,0 +1,9 @@
+# Core runtime has no mandatory third-party dependencies: the UART framing and
+# the websocket server fall back to the standard library (termios / socket).
+#
+# Recommended on the robot host:
+pyserial>=3.5
+# Face detection + camera capture (optional: the port degrades to "disabled"
+# when OpenCV is absent, and --mock-camera keeps the pipeline testable).
+opencv-python-headless>=4.5
+numpy>=1.21

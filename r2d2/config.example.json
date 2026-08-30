@@ -1,0 +1,32 @@
+{
+  "serial_port": "/dev/ttyS2",
+  "baudrate": 115200,
+  "serial_read_timeout": 1.0,
+
+  "ws_host": "0.0.0.0",
+  "ws_port": 8887,
+  "ws_path": "/",
+
+  "stream_host": "0.0.0.0",
+  "stream_port": 12121,
+  "camera_index": 0,
+  "camera_width": 640,
+  "camera_height": 480,
+  "camera_jpeg_quality": 70,
+
+  "discovery_enabled": true,
+  "discovery_port": 8090,
+
+  "face_detection_enabled": true,
+  "voice_recognition_enabled": false,
+  "mute": false,
+  "allow_host_shutdown": false,
+
+  "sound_dir": "/opt/r2d2/sound_effects",
+  "cascade_dir": "/opt/r2d2/sound_effects",
+  "state_file": "/var/lib/r2d2/state.json",
+
+  "log_level": "info",
+
+  "install_command": ["bash", "/opt/r2d2/update.sh", "{artifact}"]
+}

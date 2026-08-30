@@ -1,0 +1,31 @@
+[Unit]
+Description=R2D2 host controller (Python port of com.bullb.r2d2_nanopisystem)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=r2d2
+Group=r2d2
+# The service account needs read/write on the MCU UART and permission to drive
+# NetworkManager for pairing/AP mode:
+#   usermod -aG dialout r2d2
+#   systemctl enable --now NetworkManager
+ExecStart=/usr/bin/python3 -m r2d2 --config /etc/r2d2/config.json
+Restart=on-failure
+RestartSec=3
+Nice=-5
+
+StateDirectory=r2d2
+ConfigurationDirectory=r2d2
+LogsDirectory=r2d2
+
+# The power-off path shells out to systemctl poweroff; comment these out and add
+# a polkit rule if you want the robot to actually halt the board.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/lib/r2d2
+
+[Install]
+WantedBy=multi-user.target
