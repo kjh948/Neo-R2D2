@@ -40,7 +40,7 @@ class UartCommandClient:
 
     def __init__(
         self,
-        device: str = "/dev/ttyS2",
+        device: str = "/dev/ttyAMA0",
         baudrate: int = 115200,
         timeout: float = 1.0,
     ) -> None:
@@ -176,10 +176,10 @@ class UartCommandClient:
                 "Examples:\n"
                 "  python3 uart_client.py move --power 1 --angle 0\n"
                 "  python3 uart_client.py led --json '{\"r\":128,\"g\":0,\"b\":255}'\n"
-                "  python3 uart_client.py grantAccess --uuid demo-uuid --device /dev/ttyS2\n"
+                "  python3 uart_client.py grantAccess --uuid demo-uuid --device /dev/ttyAMA0\n"
             ),
         )
-        parser.add_argument("--device", default="/dev/ttyS2", help="UART device path (default: /dev/ttyS2)")
+        parser.add_argument("--device", default="/dev/ttyAMA0", help="UART device path (default: /dev/ttyAMA0)")
         parser.add_argument("--baudrate", type=int, default=115200, help="Baud rate (default: 115200)")
         parser.add_argument("--timeout", type=float, default=1.0, help="Read timeout seconds (default: 1.0)")
         parser.add_argument("command", nargs="?", metavar="COMMAND", choices=SUPPORTED_COMMANDS, help="UART command to send")
