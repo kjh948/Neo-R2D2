@@ -1,0 +1,23 @@
+{
+  "robot_name": "R2-D2",
+  "robot_udid": "1792d146-5876-4bb5-baf8-cc7a6be85711",
+  "robot_access_key": null,
+  "clientList": [],
+  "face_detection": true,
+  "voiceRecognition": true,
+  "mute": false,
+  "battery": 88,
+  "self_update_state": 0,
+  "update_dl_progress": 0,
+  "lightsaber": false,
+  "arm": false,
+  "projector": 0,
+  "restart_version": 0,
+  "lcd_s": false,
+  "lcd_l": false,
+  "robot_charging": 0,
+  "robot_error": "NO ERROR",
+  "ap_mode": false,
+  "ssid": null,
+  "user_control": false
+}

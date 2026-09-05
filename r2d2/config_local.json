@@ -27,7 +27,7 @@
 
   "sound_dir": "/home/kjh948/workspace/Neo-R2D2/sound_effects",
   "cascade_dir": "/home/kjh948/workspace/Neo-R2D2/sound_effects",
-  "state_file": "/var/lib/r2d2/state.json",
+  "state_file": "/home/kjh948/workspace/Neo-R2D2/state.json",
 
   "log_level": "info",
 
