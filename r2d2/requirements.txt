@@ -9,3 +9,5 @@ opencv-python-headless>=4.5
 numpy>=1.21
 # English microphone recognition (optional; requires an unpacked Vosk model).
 vosk>=0.3.45
+# HTTPS CA bundle for the Vosk model downloader.
+certifi>=2023.7.22

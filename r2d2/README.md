@@ -32,6 +32,20 @@ sudo apt install -y alsa-utils
 python3 -m pip install vosk
 ```
 
+영어와 한국어 모델은 저장소에 포함하지 않습니다. 저장소 루트에서 다음 스크립트로
+공식 Vosk 모델을 `r2d2/model/` 아래에 내려받아 압축을 풉니다.
+
+```bash
+python3 scripts/download_vosk_models.py
+```
+
+한 언어만 받거나 기존 모델을 다시 받으려면 다음처럼 실행합니다.
+
+```bash
+python3 scripts/download_vosk_models.py --language ko
+python3 scripts/download_vosk_models.py --language en --force
+```
+
 마이크 장치를 확인합니다.
 
 ```bash
