@@ -43,12 +43,9 @@ class VoiceCommand(Enum):
     STARK_SECRET = "stark_secret"
 
 
-# The phrase tables live in the Android resources (``R.array.voice_*``). The
-# shipped APK forces a French locale (``MainApplication`` does
-# ``new Locale("fr", "")``) and ``R.string.voice_path`` resolves to ``fr``, so
-# the French entries below are what the device actually answers to; the English
-# and Simplified-Chinese sets are what those locales ship, with ``en`` being the
-# ``values/`` default.
+# The phrase tables originate in the Android resources (``R.array.voice_*``).
+# The Python host selects an explicit language through ``VoiceToEventHandler``;
+# the Raspberry Pi configuration uses the English table below.
 #
 # A phrase is reachable only if it appears in BOTH the array and the
 # pocketsphinx ``keywords`` file. TURN_AROUND, MAKE_SOME_NOISE, STOP,
@@ -113,6 +110,21 @@ VOICE_PHRASES: Dict[VoiceCommand, List[str]] = {
     VoiceCommand.STOP: ["停止", "休息 一下", "停 在 这 里"],
 }
 
+ENGLISH_VOICE_PHRASES: Dict[VoiceCommand, List[str]] = {
+    VoiceCommand.WAKE_UP: ["r two d two", "two d two", "hey r two d two", "good morning", "how are you"],
+    VoiceCommand.TURN_LEFT: ["turn left", "left turn", "rotate left"],
+    VoiceCommand.TURN_RIGHT: ["turn right", "right turn", "rotate right"],
+    VoiceCommand.GO_FORWARD: ["go forward", "go straight", "go ahead", "move forward"],
+    VoiceCommand.SHAKE_HEAD: ["shake your head", "say no", "negative"],
+    VoiceCommand.WALK_A_CIRCLE: ["walk a circle", "give me a circle", "round round round"],
+    VoiceCommand.DANCE: ["dance now", "dancing dancing", "go dance", "dance please"],
+    VoiceCommand.WHO_ARE_YOU: ["who are you"],
+    VoiceCommand.LIGHT_SABER: ["lightsaber", "lightsaber action"],
+    VoiceCommand.ARMS: ["move arms", "arms", "spacecraft linkage"],
+    VoiceCommand.PATROL: ["patrol", "go patrol", "check around"],
+    VoiceCommand.STOP: ["stop", "stop here", "rest for a while"],
+}
+
 
 class VoiceToEventHandler:
     """Port of ``VoiceToEventHandler``: recognised phrase -> robot behaviour.
@@ -123,9 +135,17 @@ class VoiceToEventHandler:
     nondeterministically.
     """
 
-    def __init__(self, events, mode_controller=None, phrases: Optional[Dict[VoiceCommand, List[str]]] = None) -> None:
+    def __init__(
+        self,
+        events,
+        mode_controller=None,
+        phrases: Optional[Dict[VoiceCommand, List[str]]] = None,
+        language: str = "all",
+    ) -> None:
         self.events = events
         self.mode_controller = mode_controller
+        if phrases is None and language.lower() in {"en", "english"}:
+            phrases = ENGLISH_VOICE_PHRASES
         table: Dict[str, VoiceCommand] = {}
         for command, entries in (phrases or VOICE_PHRASES).items():
             for phrase in entries:

@@ -101,7 +101,7 @@ class RobotApplication:
             on_face_detected=self._on_face_seen,
         )
         self.camera.on_frame = self._handle_frame
-        self.voice_handler = VoiceToEventHandler(self.events)
+        self.voice_handler = VoiceToEventHandler(self.events, language=config.voice_language)
         self.voice = VoiceRecognizer(self.voice_handler)
         self.mode_controller = ModeController(
             events=self.events,

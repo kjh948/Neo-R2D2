@@ -51,6 +51,12 @@ class CommandMappingTest(unittest.TestCase):
             calls = self._fire(phrase)
             self.assertEqual(calls, [expected], phrase)
 
+    def test_english_language_selects_only_english_phrases(self):
+        handler = VoiceToEventHandler(self.events, self.modes, language="en")
+        self.assertEqual(handler.get_command("turn left"), VoiceCommand.TURN_LEFT)
+        self.assertIsNone(handler.get_command("tourne à gauche"))
+        self.assertEqual(handler.get_command("stop"), VoiceCommand.STOP)
+
     def test_chinese_phrases(self):
         cases = {
             "左 转": ("mode", (3,)),

@@ -20,8 +20,9 @@
   "discovery_enabled": true,
   "discovery_port": 8090,
 
-  "face_detection_enabled": true,
-  "voice_recognition_enabled": false,
+  "face_detection_enabled": false,
+  "voice_recognition_enabled": true,
+  "voice_language": "en",
   "mute": false,
   "allow_unpaired_clients": true,
   "allow_host_shutdown": false,

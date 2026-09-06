@@ -4,12 +4,6 @@
 (DeAgostini) 본체에서 **MCU와 웹 콘솔 사이를 담당하는 호스트 프로그램**을
 Python으로 옮긴 것입니다. 기존 Android 앱이 하던 역할을 그대로 수행합니다.
 
-- 시리얼(`/dev/ttyS2` 115200 8N1, newline 구분 JSON)으로 MCU와 통신
-- 웹 콘솔/페어링된 클라이언트용 WebSocket 명령 서버(`:8887`)
-- 카메라 프레임 배포(`:12121`) 및 OpenCV 얼굴 인식·머리 추적
-- 효과음 재생(사운드 ID 표), LED/LCD 패턴, 동작 큐(Animation Job)
-- 앱 수준 모드 상태 머신(Ready / Sleep / Pair / Patrol / UserControl)
-- UDP 디스커버리 브로드캐스트(`:8090`), Wi-Fi AP/페어링 provisioning
 
 범위: **핵심 제어 루프 전체**. Android 전용 API에 붙어 있던 부분(블루투스는
 제외)은 리눅스 등가 도구로 교체했고, 프로토콜과 값은 소스에서 직접 확인한
@@ -22,12 +16,26 @@ Python으로 옮긴 것입니다. 기존 Android 앱이 하던 역할을 그대�
 python3 -m r2d2 --mock --log-level debug
 
 # 실제 본체
+음성 인식을 켜려면 설정 파일에 다음을 추가합니다.
+
+```json
+"voice_recognition_enabled": true,
+"voice_language": "en"
+```
+
+현재 음성 인식기는 외부 STT가 인식한 문장을 `feed_keyword()`로 받는 구조입니다.
+실제 마이크를 사용하려면 Whisper, Vosk, PocketSphinx 등의 STT 연결이 필요합니다.
+영어 호출 순서는 `r two d two` 또는 `good morning`으로 깨운 뒤 15초 안에 명령을
+말하는 방식입니다. 예를 들어 `turn left`, `go forward`, `patrol`, `stop`을 사용할
+수 있습니다.
 pip install -r r2d2/requirements.txt
-python3 -m r2d2 --port /dev/ttyS2 --config /etc/r2d2/config.json
 ```
 
 `--mock`이면 송신 프레임과 재생될 효과음이 로그로 남고, 시리얼·카메라·오디오를
 건드리지 않습니다. 브라우저 콘솔이 자동으로 켜지므로 본체와 같은 네트워크에서
+음성 어구는 설정의 `voice_language`에 따라 선택됩니다. 현재 `en`은 영어 명령
+세트를 사용합니다. `turn_around`/`make_some_noise`/`skywalker`/`leia`/`angle`/
+`stark`는 기본 영어 세트에 포함되지 않습니다.
 `http://<robot-ip>:8080/` 를 열면 됩니다(`--no-web`으로 끄고 `--web-port`로
 바꿀 수 있습니다). 명령줄 검사에는 저장소의 `info/protocol/web_client.py`를
 쓸 수 있습니다.
