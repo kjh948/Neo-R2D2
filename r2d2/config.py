@@ -81,6 +81,9 @@ class Config:
     face_detection_enabled: bool = _env("R2D2_FACE_DETECTION", True)
     voice_recognition_enabled: bool = _env("R2D2_VOICE_RECOGNITION", False)
     voice_language: str = _env("R2D2_VOICE_LANGUAGE", "en")
+    vosk_english_model_path: str = _env("R2D2_VOSK_ENGLISH_MODEL_PATH", "")
+    vosk_korean_model_path: str = _env("R2D2_VOSK_KOREAN_MODEL_PATH", "")
+    audio_device: str = _env("R2D2_AUDIO_DEVICE", "default")
     mute: bool = _env("R2D2_MUTE", False)
     allow_unpaired_clients: bool = _env("R2D2_ALLOW_UNPAIRED_CLIENTS", False)
 

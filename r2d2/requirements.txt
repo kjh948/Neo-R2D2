@@ -7,3 +7,5 @@ pyserial>=3.5
 # when OpenCV is absent, and --mock-camera keeps the pipeline testable).
 opencv-python-headless>=4.5
 numpy>=1.21
+# English microphone recognition (optional; requires an unpacked Vosk model).
+vosk>=0.3.45

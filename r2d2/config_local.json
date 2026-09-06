@@ -22,14 +22,17 @@
 
   "face_detection_enabled": false,
   "voice_recognition_enabled": true,
-  "voice_language": "en",
+  "voice_language": "en-ko",
+  "vosk_english_model_path": "r2d2/model/vosk-model-small-en-us-0.15",
+  "vosk_korean_model_path": "r2d2/model/vosk-model-small-ko-0.22",
+  "audio_device": "default",
   "mute": false,
   "allow_unpaired_clients": true,
   "allow_host_shutdown": false,
 
-  "sound_dir": "/home/kjh948/workspace/Neo-R2D2/sound_effects",
-  "cascade_dir": "/home/kjh948/workspace/Neo-R2D2/sound_effects",
-  "state_file": "/home/kjh948/workspace/Neo-R2D2/state.json",
+  "sound_dir": "sound_effects",
+  "cascade_dir": "sound_effects",
+  "state_file": "state.json",
 
   "log_level": "info",
 

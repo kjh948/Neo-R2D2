@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+r2d2/model/vosk-model-small-en-us-0.15
+r2d2/model/vosk-model-small-ko-0.22

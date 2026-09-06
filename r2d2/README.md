@@ -16,25 +16,71 @@ Python으로 옮긴 것입니다. 기존 Android 앱이 하던 역할을 그대�
 python3 -m r2d2 --mock --log-level debug
 
 # 실제 본체
-음성 인식을 켜려면 설정 파일에 다음을 추가합니다.
+pip install -r r2d2/requirements.txt
+python3 -m r2d2 --port /dev/ttyS2 --config /etc/r2d2/config.json
+```
+
+### Vosk 음성 인식 테스트
+
+Vosk 독립 테스트는 로봇 앱을 실행하지 않고 마이크 음성과 인식 결과만 확인합니다.
+라즈베리파이에 먼저 ALSA 녹음 도구와 Vosk를 설치합니다.
+지원 명령어 전체 목록은 [VOICE_COMMANDS.md](../info/protocol/VOICE_COMMANDS.md)를
+참조하세요.
+
+```bash
+sudo apt install -y alsa-utils
+python3 -m pip install vosk
+```
+
+마이크 장치를 확인합니다.
+
+```bash
+arecord -l
+```
+
+저장소 루트에서 영어 Vosk 모델을 사용해 테스트합니다.
+
+```bash
+python3 scripts/test_vosk.py \
+  --model r2d2/model/vosk-model-small-en-us-0.15 \
+  --free-speech \
+  --partial
+```
+
+`--free-speech`를 생략하면 로봇 명령 vocab만 인식합니다. 인식 결과는 `FINAL:` 또는
+`PARTIAL:`로 출력되며, 이 테스트 스크립트는 로봇 동작을 실행하지 않습니다.
+
+마이크가 기본 장치가 아니면 `arecord -l` 결과에 맞춰 장치를 지정합니다.
+
+```bash
+python3 scripts/test_vosk.py \
+  --model r2d2/model/vosk-model-small-en-us-0.15 \
+  --device plughw:1,0 \
+  --partial
+```
+
+Vosk를 본체에 통합해 실행하려면 설정 파일에 다음을 지정합니다.
 
 ```json
 "voice_recognition_enabled": true,
-"voice_language": "en"
+"voice_language": "en-ko",
+"vosk_english_model_path": "r2d2/model/vosk-model-small-en-us-0.15",
+"vosk_korean_model_path": "r2d2/model/vosk-model-small-ko-0.22",
+"audio_device": "default"
 ```
 
-현재 음성 인식기는 외부 STT가 인식한 문장을 `feed_keyword()`로 받는 구조입니다.
-실제 마이크를 사용하려면 Whisper, Vosk, PocketSphinx 등의 STT 연결이 필요합니다.
-영어 호출 순서는 `r two d two` 또는 `good morning`으로 깨운 뒤 15초 안에 명령을
-말하는 방식입니다. 예를 들어 `turn left`, `go forward`, `patrol`, `stop`을 사용할
-수 있습니다.
-pip install -r r2d2/requirements.txt
+영어 음성은 `r two d two` 또는 `good morning`으로 깨운 뒤 15초 안에
+`turn left`, `go forward`, `patrol`, `stop` 같은 명령을 말합니다.
+
+```bash
+python3 -m r2d2 --config r2d2/config_local.json --log-level debug
 ```
 
 `--mock`이면 송신 프레임과 재생될 효과음이 로그로 남고, 시리얼·카메라·오디오를
 건드리지 않습니다. 브라우저 콘솔이 자동으로 켜지므로 본체와 같은 네트워크에서
-음성 어구는 설정의 `voice_language`에 따라 선택됩니다. 현재 `en`은 영어 명령
-세트를 사용합니다. `turn_around`/`make_some_noise`/`skywalker`/`leia`/`angle`/
+음성 어구는 설정의 `voice_language`에 따라 선택됩니다. `en`은 영어, `ko`는 한국어,
+`en-ko`는 영어와 한국어 명령 세트를 사용합니다. `turn_around`/`make_some_noise`/
+`skywalker`/`leia`/`angle`/
 `stark`는 기본 영어 세트에 포함되지 않습니다.
 `http://<robot-ip>:8080/` 를 열면 됩니다(`--no-web`으로 끄고 `--web-port`로
 바꿀 수 있습니다). 명령줄 검사에는 저장소의 `info/protocol/web_client.py`를
@@ -248,6 +294,7 @@ sudo cp scripts/r2d2.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now r2d2
 journalctl -fu r2d2
 # then open http://<board-ip>:8080/  (browser console)
+```
 
 서비스 계정에 UART 권한이 필요합니다: `sudo usermod -aG dialout r2d2`.
 `poweroff`까지 허용하려면 `allow_host_shutdown`을 켜고 유닛의
