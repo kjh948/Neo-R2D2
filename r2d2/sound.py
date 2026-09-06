@@ -13,6 +13,8 @@ LOG = get_logger("sound")
 _PLAYER_CANDIDATES = (
     ("paplay", ("--volume", "65536")),
     ("aplay", ()),
+    ("mpg123", ("-q",)),
+    ("mpv", ("--no-video", "--really-quiet")),
     ("ffplay", ("-nodisp", "-autoexit", "-loglevel", "quiet")),
     ("afplay", ()),
 )
@@ -157,8 +159,11 @@ class SoundPlayer:
                 return True
             argv = self._argv_for(path)
             if argv is None:
-                LOG.error("no audio player available (install one of: %s)",
-                          ", ".join(p for p, _ in _PLAYER_CANDIDATES))
+                LOG.error(
+                    "no compatible audio player for %s "
+                    "(install mpg123, mpv, or ffplay; paplay/aplay only support WAV here)",
+                    os.path.basename(path),
+                )
                 return False
             try:
                 self._process = subprocess.Popen(
