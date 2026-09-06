@@ -148,6 +148,15 @@ class GrantAccessTest(ApiTestCase):
         self.assertEqual(responses[0]["resultCode"], ERROR_UNAUTHORIZED)
         self.assertTrue(self.session.close_after_send)
 
+    def test_unpaired_client_can_be_allowed_without_entering_pair_mode(self):
+        self.api.allow_unpaired_clients = True
+        responses = self._send({"cmd": "grantAccess", "uuid": "stranger", "seq": 8})
+        reply = self._reply(responses, "grantAccess")
+        self.assertEqual(reply["resultCode"], 0)
+        self.assertTrue(self.session.valid)
+        self.assertEqual(getattr(self.modes, "pair_success", 0), 0)
+        self.assertEqual(self.stack["state"].clients, [])
+
     def test_ap_mode_grants_access_and_returns_the_robot_blob(self):
         self.wifi._ap = True
         responses = self._send({"cmd": "grantAccess", "uuid": "u-1", "device_name": "phone", "seq": 9})

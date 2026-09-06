@@ -164,6 +164,7 @@ class RobotApi:
         central,
         updater=None,
         on_broadcast: Optional[Callable[[str], None]] = None,
+        allow_unpaired_clients: bool = False,
     ) -> None:
         self.events = events
         self.state = state
@@ -172,6 +173,7 @@ class RobotApi:
         self.central = central
         self.updater = updater
         self.on_broadcast = on_broadcast or (lambda text: None)
+        self.allow_unpaired_clients = allow_unpaired_clients
         self.server = None
 
     def bind_server(self, server) -> None:
@@ -252,11 +254,11 @@ class RobotApi:
         ap_mode = bool(self.wifi and self.wifi.is_ap_mode())
         pairing = self.mode_controller is not None and self.mode_controller.get_mode() == 3
 
-        if not (ap_mode or known or pairing):
+        if not (self.allow_unpaired_clients or ap_mode or known or pairing):
             session.close_after_send = True
             return self._fail("grantAccess", seq, ERROR_UNAUTHORIZED)
 
-        if not known:
+        if not known and not self.allow_unpaired_clients:
             self.state.add_client(uuid, device_name)
 
         session.device_name = device_name
@@ -264,7 +266,7 @@ class RobotApi:
         # ``grantAccessToClient`` always routes through the pair controller's
         # success path, which is what plays the grant chime and leaves pair
         # mode -- calling the sound here as well would double it.
-        if self.mode_controller is not None:
+        if self.mode_controller is not None and pairing:
             self.mode_controller.success_connection_in_pair_mode()
 
         response = self._ok("grantAccess", seq)

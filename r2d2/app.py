@@ -129,6 +129,7 @@ class RobotApplication:
             wifi=self.wifi,
             central=self.central,
             updater=self.updater,
+            allow_unpaired_clients=config.allow_unpaired_clients,
         )
         self.server: Optional[RobotServer] = None
         self.streaming: Optional[VideoStreamingServer] = None

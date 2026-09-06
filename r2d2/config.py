@@ -81,6 +81,7 @@ class Config:
     face_detection_enabled: bool = _env("R2D2_FACE_DETECTION", True)
     voice_recognition_enabled: bool = _env("R2D2_VOICE_RECOGNITION", False)
     mute: bool = _env("R2D2_MUTE", False)
+    allow_unpaired_clients: bool = _env("R2D2_ALLOW_UNPAIRED_CLIENTS", False)
 
     # Power-off is an MCU command first; the host shutdown that follows it in
     # the Android app is opt-in so a stray client command cannot halt the board.
