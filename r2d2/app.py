@@ -80,6 +80,10 @@ class RobotApplication:
             shutdown_hook=self._shutdown_host,
         )
         self.wifi = WifiService(self.state, mock=mock)
+        if mock:
+            # Mock mode has no physical AP/pairing button, so allow a fresh
+            # browser session to complete the console handshake.
+            self.wifi._is_ap_mode = True
         self.wifi.events = self.events
         self.updater = Updater(self.state, mock=mock)
 
