@@ -1,7 +1,8 @@
 # large binaries / environments / vendored trees (reproducible via scripts + setup docs)
+# (upstream: git clone --depth 1 https://github.com/robodhruv/visualnav-transformer)
 models/
 venv/
-visualnav-transformer/   # clone: git clone --depth 1 https://github.com/robodhruv/visualnav-transformer
+visualnav-transformer/
 bench/frames/
 __pycache__/
 *.pyc
