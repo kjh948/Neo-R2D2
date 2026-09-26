@@ -35,7 +35,7 @@ def route(n=8):
 
 
 def main() -> None:
-    cfg = NavConfig(backend="vint", vint_config=CFG, vint_ckpt=CKPT).load()
+    cfg = NavConfig(vint_config=CFG, vint_ckpt=CKPT).load()
     eng = VintEngine(cfg)
     seq = route()
     ses = VintSession(eng, "e2e")

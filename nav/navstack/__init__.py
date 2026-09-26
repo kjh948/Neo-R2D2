@@ -1,13 +1,12 @@
-"""navstack: llama.cpp (GGUF) inference serving + R2D2 control for LightNav-0.
+"""navstack: visualnav-transformer (ViNT/GNM/NoMaD) navigation for the R2D2 robot.
 
-Serves the ``lightnav-serve`` WebSocket protocol on top of a stock
-``llama-server`` (llama.cpp mtmd), and drives the R2D2 robot through the
-host command API on port 8887. See ``nav/plan.md`` for the architecture.
+Serves a lightnav-serve-style WebSocket protocol (navserve) over in-process
+torch CPU inference and drives the robot through the R2D2 host command API on
+port 8887. See README.md and scripts/setup_vint.md.
 
-The torch-free LightNav modules (``traj_vocab``, ``vln_utils``, ``slowfast``,
-``prompts``, ``serving.protocol``, ``velocity``) are reused in place: the
-vendored ``LightNav-0/src`` tree is added to ``sys.path`` here so plain
-``import lightnav.<mod>`` works without installing the (torch-heavy) package.
+The vendored ``diffusion_policy`` subpackage (navstack/vendor/, MIT, files from
+real-stanford/diffusion_policy) provides ConditionalUnet1D for NoMaD without
+pulling the full diffusion_policy dependency tree; it is put on sys.path here.
 """
 
 from __future__ import annotations
@@ -15,9 +14,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_LIGHTNAV_SRC = Path(__file__).resolve().parents[1] / "LightNav-0" / "src"
+_VENDOR = Path(__file__).resolve().parent / "vendor"
+if _VENDOR.is_dir() and str(_VENDOR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR))
 
-if _LIGHTNAV_SRC.is_dir() and str(_LIGHTNAV_SRC) not in sys.path:
-    sys.path.insert(0, str(_LIGHTNAV_SRC))
-
-__version__ = "0.1.0"
+__version__ = "0.2.0"

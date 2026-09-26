@@ -1,11 +1,7 @@
-# large binaries / environments / vendored trees (all reproducible via
-# scripts/download_models.sh + setup docs; never commit them)
+# large binaries / environments / vendored trees (reproducible via scripts + setup docs)
 models/
 venv/
-llama.cpp-src/
-visualnav-transformer/
-# upstream repo, 108MB of media -- clone with scripts/fetch_lightnav.sh
-LightNav-0/
+visualnav-transformer/   # clone: git clone --depth 1 https://github.com/robodhruv/visualnav-transformer
 bench/frames/
 __pycache__/
 *.pyc

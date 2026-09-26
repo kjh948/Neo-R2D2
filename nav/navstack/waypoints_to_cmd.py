@@ -1,6 +1,6 @@
 """Waypoint chunk -> R2D2 (power, angle) motion command. Pure functions.
 
-Waypoint rows (lightnav protocol): ``[forward_m, lateral_m, yaw_rad]`` at 0.1 s
+Waypoint rows (navserve protocol): ``[forward_m, lateral_m, yaw_rad]`` at 0.1 s
 spacing, +lateral = LEFT, +yaw = CCW, in the frame of the robot at capture time.
 
 R2D2 ``move`` semantics (r2d2/web/index.html, info/protocol/UART_COMMANDS.md):
@@ -23,7 +23,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-WP_DT_S = 0.1  # waypoint spacing, lightnav serving default
+WP_DT_S = 0.1  # waypoint spacing (navserve default: 10 rows = 1 s)
 
 
 @dataclass
@@ -42,9 +42,8 @@ def sample_waypoints(waypoints: np.ndarray, t_s: float, dt_s: float = WP_DT_S) -
     """Interpolate (forward, lateral, yaw) at time t_s into the chunk.
 
     Row i is the pose at t=(i+1)*dt -- the chunk-start identity is NOT stored
-    (lightnav.traj_vocab.compose_to_abs), so we anchor at the origin (0,0,0) at
-    t=0. Beyond the chunk end, clamps to the last row (the robot converges to
-    the path end, like lightnav's MPC repeating the final waypoint).
+    in the rows, so we anchor at the origin (0,0,0) at t=0. Beyond the chunk
+    end, clamps to the last row (the robot converges to the path end).
     """
     wp = np.asarray(waypoints, dtype=np.float64)
     if wp.ndim != 2 or wp.shape[1] != 3 or len(wp) == 0:

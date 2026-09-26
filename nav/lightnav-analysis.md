@@ -1,3 +1,6 @@
+> **[역사 문서 / 2026-09-26]** LightNav-0 경로는 제거되었습니다(README 참고).
+> 본 파이프라인 분석은 분석 기법 참조용으로 보존합니다.
+
 # LightNav-0 pipeline analysis for a llama.cpp / GGUF port
 
 Codebase: `/Users/apple/workspace/Neo-R2D2/nav/LightNav-0` (read-only research, 2026-09-26).

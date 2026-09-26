@@ -1,8 +1,13 @@
-"""navstack CLI: ``python -m navstack {serve|supervise|drive}``.
+"""navstack CLI: ``python -m navstack {serve|drive}``.
 
-  serve      navserve WS server only (expects a llama-server already up)
-  supervise  llama-server child process + navserve, one lifecycle (recommended)
-  drive      navigator: camera -> navserve -> R2D2 (works from Mac or Pi5)
+  serve   navserve WebSocket server (in-process torch; model from --vint-*)
+  drive   navigator: camera -> navserve -> R2D2 motion
+
+Examples
+  python -m navstack serve                         # NoMaD default (goal-less)
+  python -m navstack serve --vint-config .../vint.yaml --vint-ckpt .../vint.pth
+  python -m navstack drive --server ws://h:8050 --robot <pi> --camera r2d2 \
+      [--goal-image dest.jpg | --topomap dir] [--show] [--dry-run]
 """
 
 from __future__ import annotations
@@ -10,93 +15,40 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import signal
-import sys
 
-from .config import LLAMA_HOST, LLAMA_PORT, NAVSERVE_PORT, NavConfig
-from .server import NavServer, build_engine
-from .llama_supervisor import LlamaServerProcess
+from .config import DEFAULT_PORT, NavConfig
 
 logger = logging.getLogger("navstack")
 
 
-def _add_common(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--task", choices=["vln", "tracking"], default="vln")
-    p.add_argument("--preset", choices=["full", "lite", "micro", "nano"], default="full")
-    p.add_argument("--model-dir", default=None)
-    p.add_argument("--max-new-tokens", type=int, default=None)
-    p.add_argument("--llama-url", default=f"http://{LLAMA_HOST}:{LLAMA_PORT}")
-    p.add_argument("--log-level", default="INFO")
-    # ---- vint backend (visualnav-transformer GNM/ViNT) ----
-    p.add_argument("--backend", choices=["llama", "vint"], default="llama")
-    p.add_argument("--vint-config", default="")
-    p.add_argument("--vint-ckpt", default="")
+def _add_model(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--vint-config", default=NavConfig.vint_config,
+                   help="upstream training yaml (nomad/vint/gnm)")
+    p.add_argument("--vint-ckpt", default=NavConfig.vint_ckpt, help="*.pth weights")
     p.add_argument("--vint-threads", type=int, default=0)
     p.add_argument("--wp-scale-m", type=float, default=0.75)
     p.add_argument("--close-threshold-m", type=float, default=0.5)
-
-
-def _cfg(args) -> NavConfig:
-    from pathlib import Path
-    cfg = NavConfig(
-        task=args.task, preset=args.preset, llama_url=args.llama_url,
-        max_new_tokens=args.max_new_tokens, log_level=args.log_level,
-        backend=args.backend, vint_config=args.vint_config, vint_ckpt=args.vint_ckpt,
-        vint_threads=args.vint_threads, wp_scale_m=args.wp_scale_m,
-        close_threshold_m=args.close_threshold_m)
-    if args.model_dir:
-        cfg.model_dir = Path(args.model_dir)
-    return cfg.load()
+    p.add_argument("--subgoal-radius", type=int, default=3)
+    p.add_argument("--y-sign", type=float, default=1.0,
+                   help="-1 if the robot consistently steers the wrong way")
 
 
 def cmd_serve(args) -> None:
-    cfg = _cfg(args)
-    cfg.host, cfg.port = args.host, args.port
-    cfg.goal_image = args.goal_image
-    cfg.topomap = args.topomap
-    cfg.topomap_dir = args.topomap_dir
     from .server import serve
+    cfg = NavConfig(
+        host=args.host, port=args.port, log_level=args.log_level,
+        vint_config=args.vint_config, vint_ckpt=args.vint_ckpt,
+        vint_threads=args.vint_threads, goal_image=args.goal_image,
+        topomap=args.topomap, topomap_dir=args.topomap_dir,
+        wp_scale_m=args.wp_scale_m, close_threshold_m=args.close_threshold_m,
+        subgoal_radius=args.subgoal_radius, y_sign=args.y_sign)
     serve(cfg)
-
-
-def cmd_supervise(args) -> None:
-    """llama-server (child) + navserve in one process tree (vosk_bridge pattern)."""
-    cfg = _cfg(args)
-    cfg.host, cfg.port = args.host, args.port
-    if cfg.backend == "vint":
-        cfg.goal_image = args.goal_image
-        cfg.topomap = args.topomap
-        cfg.topomap_dir = args.topomap_dir
-        from .server import serve  # torch runs in-process; no llama child needed
-        serve(cfg)
-        return
-    llama = LlamaServerProcess(
-        host=LLAMA_HOST, port=LLAMA_PORT, binary=args.llama_binary,
-        ngl=args.ngl, threads=args.threads, ctx=args.ctx)
-    llama.start()
-
-    def shutdown(*_):
-        logger.info("shutting down")
-        llama.stop()
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, shutdown)
-    signal.signal(signal.SIGTERM, shutdown)
-    engine = build_engine(cfg)
-    server = NavServer(cfg, engine)
-    try:
-        asyncio.run(server.run())
-    finally:
-        llama.stop()
 
 
 def cmd_drive(args) -> None:
     from .camera import make_source
     from .navigator import Navigator
     from .waypoints_to_cmd import MotionParams
-    if not args.instruction and not args.goal_image and not args.topomap:
-        ap_error = "drive needs --instruction (llama) or --goal-image/--topomap (vint)"
-        raise SystemExit(ap_error)
     logging.basicConfig(level=getattr(logging, args.log_level.upper(), logging.INFO))
     motion = MotionParams(v_full_mps=args.v_full, max_power=args.max_power)
     source = make_source(args.camera, robot_host=args.robot)
@@ -115,34 +67,23 @@ def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="navstack")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("serve", help="navserve WebSocket server (external llama-server)")
-    _add_common(p)
+    p = sub.add_parser("serve", help="navserve WebSocket server")
+    _add_model(p)
     p.add_argument("--host", default="0.0.0.0")
-    p.add_argument("--port", type=int, default=NAVSERVE_PORT)
-    p.add_argument("--goal-image", default="", help="vint: fixed goal photo")
-    p.add_argument("--topomap", default="", help="vint: ordered 0.jpg..N.jpg node dir")
-    p.add_argument("--topomap-dir", default="", help="vint: base dir for named setGoal")
+    p.add_argument("--port", type=int, default=DEFAULT_PORT)
+    p.add_argument("--goal-image", default="", help="optional fixed goal photo")
+    p.add_argument("--topomap", default="", help="optional ordered 0.jpg..N.jpg dir")
+    p.add_argument("--topomap-dir", default="", help="base dir for named setGoal")
+    p.add_argument("--log-level", default="INFO")
     p.set_defaults(fn=cmd_serve)
 
-    p = sub.add_parser("supervise", help="llama-server + navserve in one lifecycle")
-    _add_common(p)
-    p.add_argument("--host", default="0.0.0.0")
-    p.add_argument("--port", type=int, default=NAVSERVE_PORT)
-    p.add_argument("--llama-binary", default="llama-server")
-    p.add_argument("--ngl", type=int, default=0, help="LLM layers to GPU (0 = CPU only)")
-    p.add_argument("--threads", type=int, default=None)
-    p.add_argument("--ctx", type=int, default=8192)
-    p.add_argument("--goal-image", default="", help="vint: fixed goal photo")
-    p.add_argument("--topomap", default="", help="vint: node dir for graph navigation")
-    p.add_argument("--topomap-dir", default="", help="vint: base dir for named setGoal")
-    p.set_defaults(fn=cmd_supervise)
-
-    p = sub.add_parser("drive", help="navigator: camera -> navserve -> R2D2 motion")
+    p = sub.add_parser("drive", help="camera -> navserve -> R2D2")
     p.add_argument("--server", required=True, help="ws://navhost:8050")
     p.add_argument("--robot", required=True, help="R2D2 host (command port 8887)")
-    p.add_argument("--instruction", default="", help="language goal (llama backend)")
-    p.add_argument("--goal-image", default="", help="goal photo path (vint backend)")
-    p.add_argument("--topomap", default="", help="node dir (vint graph navigation)")
+    p.add_argument("--instruction", default="",
+                   help="ignored by the vint backend (protocol compat)")
+    p.add_argument("--goal-image", default="", help="goal photo (omit with NoMaD)")
+    p.add_argument("--topomap", default="", help="node dir for graph navigation")
     p.add_argument("--camera", default="r2d2", help="r2d2 | usb[:N] | dir:PATH")
     p.add_argument("--sample-fps", type=float, default=4.0)
     p.add_argument("--control-hz", type=float, default=3.0)
@@ -151,8 +92,7 @@ def main(argv=None) -> None:
     p.add_argument("--max-power", type=float, default=60.0)
     p.add_argument("--dry-run", action="store_true", help="no robot, log commands")
     p.add_argument("--show", action="store_true",
-                   help="live OpenCV window: camera view + inference overlay (off by default; "
-                        "needs opencv-python GUI build, not headless)")
+                   help="OpenCV window: camera + inference overlay (GUI opencv build)")
     p.add_argument("--log-level", default="INFO")
     p.set_defaults(fn=cmd_drive)
 

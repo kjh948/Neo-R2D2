@@ -35,8 +35,8 @@ MOVE_DEADMAN_S = 0.3
 class R2D2Link:
     """Holds the 8887 command socket; caller drives it with send_* calls."""
 
-    def __init__(self, host: str, port: int = 8887, uuid: str = "lightnav-1",
-                 device_name: str = "LightNav"):
+    def __init__(self, host: str, port: int = 8887, uuid: str = "navstack-1",
+                 device_name: str = "NavStack"):
         self.url = f"ws://{host}:{port}/"
         self.uuid = uuid
         self.device_name = device_name

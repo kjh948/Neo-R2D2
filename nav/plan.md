@@ -1,5 +1,11 @@
 # LightNav-0 × R2D2 — llama.cpp 기반 Mac / Raspberry Pi 5 구현 계획
 
+> **[역사 문서 / 2026-09-26]** 이 계획으로 구현·검증까지 완료했으나, 이후 LightNav
+> 경로는 프로젝트 범위에서 제외되어 코드/자산이 모두 제거되었습니다
+> (대안: NoMaD/ViNT — README.md 참고). 제거 전 구현물은 git 히스토리
+> (커밋 1a54c2b, f1e7336, 560b5fe) 에서 복원 가능합니다. 본문은 분석 기록으로 보존.
+
+
 작성: 2026-09-26. 근거: `nav/lightnav-analysis.md`(LightNav-0パイ프라인 분석),
 r2d2 코드 분석(`r2d2/`), `prithivMLmods/LightNav-0-GGUF` 확인.
 
