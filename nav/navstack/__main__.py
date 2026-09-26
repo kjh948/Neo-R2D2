@@ -104,7 +104,7 @@ def cmd_drive(args) -> None:
         server_url=args.server, robot_host=args.robot, instruction=args.instruction,
         frame_source=source, sample_fps=args.sample_fps, control_hz=args.control_hz,
         stale_after_s=args.stale_after, motion=motion, dry_run=args.dry_run,
-        goal_image=args.goal_image, goal_topomap=args.topomap)
+        goal_image=args.goal_image, goal_topomap=args.topomap, show=args.show)
     try:
         asyncio.run(nav.run())
     except KeyboardInterrupt:
@@ -150,6 +150,9 @@ def main(argv=None) -> None:
     p.add_argument("--v-full", type=float, default=0.30, help="robot m/s at power 100")
     p.add_argument("--max-power", type=float, default=60.0)
     p.add_argument("--dry-run", action="store_true", help="no robot, log commands")
+    p.add_argument("--show", action="store_true",
+                   help="live OpenCV window: camera view + inference overlay (off by default; "
+                        "needs opencv-python GUI build, not headless)")
     p.add_argument("--log-level", default="INFO")
     p.set_defaults(fn=cmd_drive)
 

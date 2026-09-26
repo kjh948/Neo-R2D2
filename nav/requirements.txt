@@ -5,6 +5,8 @@ pillow>=9.0
 websockets>=13.0
 gguf>=0.10          # GGUF metadata read (tokenizer vocab for token-id decode)
 opencv-python-headless>=4.5   # UsbCameraSource only (skip on pure-robot hosts)
+# drive --show needs a GUI build instead of headless:
+#   pip uninstall -y opencv-python-headless && pip install opencv-python
 
 # dev/tests
 pytest>=7.0

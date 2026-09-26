@@ -45,6 +45,12 @@ waypoint fwd>0 / lat 부호 정상, **추론 ~100ms(≈8-10Hz)** — LightNav 15
 동일 `navstack drive`/`waypoints_to_cmd`/`r2d2_link` 재사용 (백엔드만 교체).
 topomap 그래프 내비: `scripts/record_topomap.py`로 ROS 없이 노드 수집 → `--topomap DIR`.
 
+### `drive --show` — 카메라 화면 + 추론 오버레이 (기본 off)
+`--show` 를 붙이면 OpenCV 창에 라이브 프레임과 함께 raw_text(거리/토큰), stop/seq/
+latency, 현재 (power, angle) 명령, 우하단 웨이포인트 미니맵이 그려진다. `q`/Esc로 창
+종료. **GUI 빌드 필요**: `pip uninstall -y opencv-python-headless && pip install
+opencv-python` (Intel Mac의 경우 torch 호환을 위해 `numpy==1.26.4` 유지).
+
 ### Mac 내장 웹캠 사용 노트 (macOS TCC)
 - `--camera usb:0`는 **사용자 터미널에서 포그라운드로 실행**할 것: 첫 실행 시
   시스템이 카메라 허용 다이얼로그를 띄운다 (거절하면 System Settings → Privacy &

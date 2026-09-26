@@ -48,6 +48,7 @@ class Navigator:
         dry_run: bool = False,      # log commands, do not touch the robot
         goal_image: str = "",       # vint backend: goal photo (b64 via setGoal)
         goal_topomap: str = "",     # vint backend: node dir for graph navigation
+        show: bool = False,         # live OpenCV window: camera + inference overlay
     ):
         self.server_url = server_url
         self.instruction = instruction
@@ -69,6 +70,15 @@ class Navigator:
         self._seq = 0
         self._inflight = False
         self._tasks: list[asyncio.Task] = []
+        self.show = show
+        self._viewer = None
+        self._latest_jpeg: Optional[bytes] = None      # last frame from source
+        self._last_cmd: tuple[int, int] = (0, 0)       # last motion command
+        self._last_latency: Optional[float] = None
+        self._info: dict = {}                          # last server response fields
+        if show:
+            from .viewer import FrameViewer
+            self._viewer = FrameViewer(title=f"navstack {robot_host}")
 
     # ------------------------------------------------------------- navserve
     async def _send_goal(self, ws) -> None:
@@ -89,6 +99,7 @@ class Navigator:
         if jpeg is None or self._inflight:
             return
         self._inflight = True
+        self._latest_jpeg = jpeg
         self._seq += 1
         req = {"action": "next", "data": {
             "seq": self._seq,
@@ -110,6 +121,9 @@ class Navigator:
                 self.wp_time = time.monotonic()
                 self.last_error = None
             self.stop_flag = bool(data.get("stop"))
+            self._info = {k: data.get(k) for k in
+                          ("raw_text", "stop", "seq", "latency_ms",
+                           "subgoal_node", "subgoal_dist_m") if k in data}
             if self.stop_flag:
                 logger.info("model requested STOP (raw=%r)", data.get("raw_text"))
         except asyncio.TimeoutError:
@@ -155,6 +169,7 @@ class Navigator:
     async def _driver(self) -> None:
         while True:
             power, angle = self._current_command()
+            self._last_cmd = (power, angle)
             if self.dry_run:
                 logger.info("[dry-run] move power=%d angle=%d (stop=%s err=%s)",
                             power, angle, self.stop_flag, self.last_error)
@@ -164,7 +179,20 @@ class Navigator:
                     await self.robot.move(power, angle)
                 except Exception as exc:
                     logger.error("move send failed: %s", exc)
+            self._render()
             await asyncio.sleep(self.control_dt)
+
+    def _render(self) -> None:
+        """Live camera + inference overlay (drive --show). Main-thread only."""
+        if self._viewer is None or self._latest_jpeg is None:
+            return
+        info = dict(self._info)
+        info["cmd"] = self._last_cmd
+        if self.waypoints is not None:
+            info["waypoints"] = self.waypoints.tolist()
+        if self.last_error:
+            info["raw_text"] = f"ERR {self.last_error}"
+        self._viewer.render(self._latest_jpeg, info)
 
     async def _lease(self) -> None:
         while True:
@@ -215,4 +243,6 @@ class Navigator:
             except Exception as exc:
                 logger.error("robot shutdown incomplete: %s", exc)
         await self.source.close()
+        if self._viewer is not None:
+            self._viewer.close()
         logger.info("navigator stopped")
