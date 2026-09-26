@@ -1,0 +1,12 @@
+# large binaries / environments / vendored trees (all reproducible via
+# scripts/download_models.sh + setup docs; never commit them)
+models/
+venv/
+llama.cpp-src/
+visualnav-transformer/
+# upstream repo, 108MB of media -- clone with scripts/fetch_lightnav.sh
+LightNav-0/
+bench/frames/
+__pycache__/
+*.pyc
+.DS_Store
