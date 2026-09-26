@@ -26,15 +26,28 @@ class UsbCameraSource:
         self.latest: Optional[bytes] = None
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self._cap = None
 
-    def _run(self) -> None:
-        import cv2  # local import: only needed on camera hosts
-        cap = cv2.VideoCapture(self.index)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.size[0])
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.size[1])
-        if not cap.isOpened():
+    def open(self) -> bool:
+        """Open the device ON THE CALLING (main) thread.
+
+        macOS/AVFoundation cannot run the TCC camera-authorization prompt from a
+        non-main thread ("can not spin main run loop from other thread"), and a
+        backgrounded process then silently fails isOpened(). Open here, read in
+        the worker loop. Linux/V4L2 (Pi5) is indifferent but shares the API.
+        """
+        import cv2
+        self._cap = cv2.VideoCapture(self.index)
+        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.size[0])
+        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.size[1])
+        if not self._cap.isOpened():
             logger.error("cannot open camera %d", self.index)
-            return
+            self._cap = None
+            return False
+        return True
+
+    def _run(self, cap) -> None:
+        import cv2  # local import: only needed on camera hosts
         while not self._stop.is_set():
             ok, frame = cap.read()
             if not ok:
@@ -47,7 +60,10 @@ class UsbCameraSource:
         cap.release()
 
     async def connect(self) -> None:
-        self._thread = threading.Thread(target=self._run, name="usb-cam", daemon=True)
+        if not self.open():
+            raise RuntimeError(f"USB camera {self.index} unavailable")
+        self._thread = threading.Thread(target=self._run, args=(self._cap,),
+                                        name="usb-cam", daemon=True)
         self._thread.start()
 
     async def get_jpeg(self) -> Optional[bytes]:

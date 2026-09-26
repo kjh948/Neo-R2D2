@@ -45,6 +45,15 @@ waypoint fwd>0 / lat 부호 정상, **추론 ~100ms(≈8-10Hz)** — LightNav 15
 동일 `navstack drive`/`waypoints_to_cmd`/`r2d2_link` 재사용 (백엔드만 교체).
 topomap 그래프 내비: `scripts/record_topomap.py`로 ROS 없이 노드 수집 → `--topomap DIR`.
 
+### Mac 내장 웹캠 사용 노트 (macOS TCC)
+- `--camera usb:0`는 **사용자 터미널에서 포그라운드로 실행**할 것: 첫 실행 시
+  시스템이 카메라 허용 다이얼로그를 띄운다 (거절하면 System Settings → Privacy &
+  Security → Camera에 터미널 앱 추가).
+- 자동화/디택드(no­hup·SSH 비인터랙티브) 컨텍스트에서는 AVFoundation 권한 프롬프트를
+  띄울 수 없어 열기가 실패할 수 있다 (설계상 open()은 메인 스레드에서 수행).
+- 카메라가 실제로 흐르는지 점검: `venv/bin/python bench/vint_e2e.py`가 아니라면
+  `cv2.VideoCapture(0)` 한 장 읽기 테스트로 먼저 확인.
+
 ## 구조
 
 ```
