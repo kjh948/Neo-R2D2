@@ -154,13 +154,35 @@ class VintEngine:
         return
 
     # ---- tensorization ------------------------------------------------------
+    # ---- tensorization ------------------------------------------------------
+    @staticmethod
+    def _aspect_crop(img):
+        """Center-crop to 4:3 like upstream (data_utils.IMAGE_ASPECT_RATIO).
+
+        Without this, 16:9 laptop frames get vertically squashed into the
+        model's square input -- the classic 'camera image looks weird / model
+        steers oddly' failure on wide cameras.
+        """
+        w, h = img.size
+        target = 4.0 / 3.0
+        if w / h > target:                      # too wide -> crop sides
+            nw = int(h * target)
+            x0 = (w - nw) // 2
+            img = img.crop((x0, 0, x0 + nw, h))
+        elif w / h < target:                    # too tall -> crop top/bottom
+            nh = int(w / target)
+            y0 = (h - nh) // 2
+            img = img.crop((0, y0, w, y0 + nh))
+        return img
+
     def _to_tensor(self, frames: List[np.ndarray]):
         """uint8 HWC frames -> [1, 3*len, H, W] ImageNet-normalized."""
         from PIL import Image
         w, h = self.image_size
         chans = []
         for f in frames:
-            img = Image.fromarray(f).convert("RGB").resize((w, h), Image.BILINEAR)
+            img = self._aspect_crop(Image.fromarray(f).convert("RGB"))
+            img = img.resize((w, h), Image.BILINEAR)
             arr = np.asarray(img, dtype=np.float32) / 255.0
             arr = (arr - _IMAGENET_MEAN) / _IMAGENET_STD
             chans.append(np.transpose(arr, (2, 0, 1)))

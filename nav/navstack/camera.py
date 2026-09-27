@@ -44,7 +44,30 @@ class UsbCameraSource:
             logger.error("cannot open camera %d", self.index)
             self._cap = None
             return False
+        self._warmup(cv2)
         return True
+
+    def _warmup(self, cv2, timeout_s: float = 3.0, min_mean: float = 10.0) -> None:
+        """Drop black/wrong-exposure startup frames.
+
+        Mac webcams (AVFoundation) return near-black frames for the first
+        ~0.5-1.5 s while auto-exposure settles. Those frames would enter the
+        policy's context deque and poison early predictions, so read until a
+        frame has real signal (or timeout -- a genuinely dark room still
+        proceeds).
+        """
+        import time
+        deadline = time.monotonic() + timeout_s
+        good = 0
+        while time.monotonic() < deadline and good < 2:
+            ok, frame = self._cap.read()
+            if not ok:
+                time.sleep(0.05)
+                continue
+            good = good + 1 if float(frame.mean()) > min_mean else 0
+        if not good:
+            logger.warning("camera %d: startup frames stayed dark (dark room "
+                           "or covered lens?)", self.index)
 
     def _run(self, cap) -> None:
         import cv2  # local import: only needed on camera hosts
