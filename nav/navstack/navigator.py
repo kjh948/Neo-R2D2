@@ -94,12 +94,23 @@ class Navigator:
         resp = json.loads(await ws.recv())
         logger.info("setGoal: %s", resp.get("data", {}).get("msg", resp))
 
+    async def _frame_pump(self) -> None:
+        """Sole reader of the camera source: keeps _latest_jpeg fresh even
+        while navserve is down/reconnecting, so --show always has a frame."""
+        while True:
+            try:
+                j = await self.source.get_jpeg()
+                if j:
+                    self._latest_jpeg = j
+            except Exception as exc:
+                logger.debug("frame pump: %s", exc)
+            await asyncio.sleep(0.08)
+
     async def _next_frame(self, ws) -> None:
-        jpeg = await self.source.get_jpeg()
+        jpeg = self._latest_jpeg
         if jpeg is None or self._inflight:
             return
         self._inflight = True
-        self._latest_jpeg = jpeg
         self._seq += 1
         req = {"action": "next", "data": {
             "seq": self._seq,
@@ -211,11 +222,15 @@ class Navigator:
             await self.robot.claim_control()
             logger.info("claimed user_control on %s", self.robot.url)
         self._tasks = [
+            asyncio.create_task(self._frame_pump(), name="pump"),
             asyncio.create_task(self._sampler(), name="sampler"),
             asyncio.create_task(self._driver(), name="driver"),
         ]
         if self.robot is not None:
             self._tasks.append(asyncio.create_task(self._lease(), name="lease"))
+        if self._viewer is not None:
+            logger.info("--show: window 'navstack %s' opens on the first frame "
+                        "(check behind the terminal!)", self.robot.url if self.robot else "drive")
         try:
             done, _ = await asyncio.wait(
                 [asyncio.ensure_future(self._stop_watcher())] + self._tasks,

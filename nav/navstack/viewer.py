@@ -36,12 +36,32 @@ class FrameViewer:
             cv2.namedWindow(self.title, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
             cv2.resizeWindow(self.title, 640, 520)
             self._cv2 = cv2
+            import logging
+            logging.getLogger("navstack.viewer").info(
+                "viewer window '%s' created", self.title)
+            self._raise_macos()
         except Exception as exc:
             self._disabled = True
             import logging
             logging.getLogger("navstack.viewer").warning(
                 "--show disabled: %s (install the GUI build: %s)", exc, GUI_INSTALL_HINT)
         return self._cv2
+
+    @staticmethod
+    def _raise_macos() -> None:
+        """Best effort: OpenCV windows open BEHIND the terminal on macOS
+        (python is not the active app), which reads as 'no GUI at all'."""
+        import subprocess
+        import sys
+        if sys.platform != "darwin":
+            return
+        script = ('tell application "System Events" to set frontmost of '
+                  '(first process whose name is "Python") to true')
+        try:
+            subprocess.run(["osascript", "-e", script], timeout=3,
+                           capture_output=True)
+        except Exception:
+            pass   # no automation permission etc. -- window still exists
 
     def render(self, jpeg: bytes, info: Dict[str, object]) -> None:
         cv2 = self._ensure()
