@@ -20,6 +20,7 @@ from geometry_msgs.msg import Twist
 from rclpy.node import Node
 
 from .mcu_client import McuClient
+from .mcu_config import load_mcu_config
 from .twist_mapping import MoveMapping, twist_to_move
 
 
@@ -27,7 +28,12 @@ class MotorNode(Node):
     def __init__(self) -> None:
         super().__init__("r2d2_motor")
 
-        self.declare_parameter("serial_port", "/dev/ttyS2")
+        # "" / -1 mean "take it from the r2d2 config file (config_local.json),
+        # falling back to the built-in default" — explicit params still win.
+        self.declare_parameter("config_file", "")
+        self.declare_parameter("serial_port", "")
+        self.declare_parameter("baudrate", -1)
+        self.declare_parameter("serial_read_timeout", -1.0)
         self.declare_parameter("mock", False)
         self.declare_parameter("cmd_vel_topic", "/cmd_vel")
         self.declare_parameter("max_linear_velocity", 0.5)
@@ -38,6 +44,26 @@ class MotorNode(Node):
         self.declare_parameter("cmd_vel_timeout", 0.5)
         self.declare_parameter("repeat_period", 0.3)
         self.declare_parameter("gin_period", 5.0)
+
+        cfg = load_mcu_config(self.get_parameter("config_file").value)
+        if "_config_path" in cfg:
+            self.get_logger().info(f"using MCU defaults from {cfg['_config_path']}")
+        else:
+            self.get_logger().warn("no r2d2 config found; falling back to built-in defaults")
+
+        def resolve(name: str, key: str, fallback):
+            """Explicit ROS param wins; "" / -1 defer to the config file."""
+            value = self.get_parameter(name).value
+            if isinstance(value, str) and value == "":
+                return cfg.get(key, fallback)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and value < 0:
+                return cfg.get(key, fallback)
+            return value
+
+        serial_port = resolve("serial_port", "serial_port", "/dev/ttyS2")
+        baudrate = int(resolve("baudrate", "baudrate", 115200))
+        read_timeout = float(resolve("serial_read_timeout", "serial_read_timeout", 1.0))
+        mock = bool(self.get_parameter("mock").value or cfg.get("mock_serial", False))
 
         self._mapping = MoveMapping(
             max_linear_velocity=self.get_parameter("max_linear_velocity").value,
@@ -50,8 +76,10 @@ class MotorNode(Node):
         repeat_period = float(self.get_parameter("repeat_period").value)
 
         self._client = McuClient(
-            device=self.get_parameter("serial_port").value,
-            mock=self.get_parameter("mock").value,
+            device=serial_port,
+            mock=mock,
+            baudrate=baudrate,
+            read_timeout=read_timeout,
             logger=self.get_logger(),
         )
         try:

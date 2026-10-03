@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>hector_slam_launch</name>
+  <version>0.5.2</version>
+  <description>
+    hector_slam_launch contains launch files for launching hector_slam with different robot systems/setups/postprocessing scenarios.
+  </description>
+
+  <maintainer email="meyer@fsr.tu-darmstadt.de">Johannes Meyer</maintainer>
+
+  <license>BSD</license>
+
+  <url type="website">http://ros.org/wiki/hector_slam_launch</url>
+
+  <author email="kohlbrecher@sim.tu-darmstadt.de">Stefan Kohlbrecher</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  
+  <exec_depend>hector_mapping</exec_depend>
+  <exec_depend>hector_map_server</exec_depend>
+  <exec_depend>hector_trajectory_server</exec_depend>
+  <exec_depend>hector_geotiff</exec_depend>
+  <exec_depend>hector_geotiff_plugins</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>tf2</exec_depend>
+  <exec_depend>topic_tools</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

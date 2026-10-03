@@ -21,10 +21,20 @@ class McuStatus:
 class McuClient:
     """Owns the UART link; exposes the handful of commands the node needs."""
 
-    def __init__(self, device: str, mock: bool = False, logger=None) -> None:
+    def __init__(
+        self,
+        device: str,
+        mock: bool = False,
+        baudrate: int = 115200,
+        read_timeout: float = 1.0,
+        logger=None,
+    ) -> None:
         self._log = logger
         self.status = McuStatus()
-        self.transport = JsonLineTransport(device=device, mock=mock, on_line=self._on_line)
+        self.transport = JsonLineTransport(
+            device=device, baudrate=baudrate, read_timeout=read_timeout,
+            mock=mock, on_line=self._on_line,
+        )
         self.commander = Commander(self.transport, state=self.status)
 
     # -- lifecycle ------------------------------------------------------------
