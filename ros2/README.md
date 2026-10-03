@@ -1,7 +1,8 @@
 # ros2 — Neo-R2D2 ROS 2 워크스페이스 (Jazzy)
 
 ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
-`/cmd_vel`(Twist) → MCU 모터 제어, LDROBOT LiDAR, hector SLAM까지 한 번에 올립니다.
+`/cmd_vel`(Twist) → MCU 모터 제어, LDROBOT LiDAR, hector SLAM, MPU6050 IMU,
+그리고 nav2 내비게이션까지 한 번에 올립니다.
 
 ```
                     ┌────────────┐   /cmd_vel (Twist)
@@ -16,6 +17,9 @@ ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
                     │ hector_    │──▶ /map, TF: map → base_link
                     │ mapping    │
                     └────────────┘
+                    ┌────────────┐   /dev/i2c-<bus>
+ MPU6050 ──────────▶│ mpu6050drv │──▶ /imu (sensor_msgs/Imu)
+                    └────────────┘
 ```
 
 ## 패키지 구성
@@ -23,15 +27,18 @@ ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
 | 패키지 | 종류 | 설명 |
 |---|---|---|
 | `src/r2d2_motor/` | 직접 개발 (ament_python) | Twist → MCU `move` 프레임 변환 노드 |
-| `src/r2d2_bringup/` | 직접 개발 (ament_python) | motor + lidar + slam 통합 launch |
+| `src/r2d2_bringup/` | 직접 개발 (ament_python) | motor + lidar + slam + imu 통합 launch |
 | `src/ldlidar_ros2/` | 외부 클론 | LDROBOT LiDAR 드라이버 (sdk 서브모듈 포함) |
 | `src/hector_slam_humble/` | 외부 클론 | hector SLAM (15개 패키지) |
+| `src/ros2_mpu6050/` | 외부 클론 | MPU6050 I2C IMU 드라이버 + calibrate 유틸 (Pi5/Jazzy 패치) |
+| `src/r2d2_navigation/` | 직접 개발 (ament_cmake) | Nav2 내비게이션 스택 + 지도 저장 스크립트 (§6) |
 
 ## 1. 모터 제어 — `r2d2_motor`
 
 `geometry_msgs/Twist`를 구독해 R2-D2 MCU의 UART JSON 프로토콜
 (`{"cmd":"move","power":P,"angle":A}`, power 0~100)로 변환합니다.
-MCU는 홀로노믹(방향각) 구동이라 전방 0 / 후방 180 / 좌우 ±90만 사용 (차동조향식 매핑).
+MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: angle 0/180 전후진,
+**±90 제자리 회전**, 사이 각도는 호 회전(운영자 실물 확인; robotics.SE q18048 IK).
 
 ### 파일 구조
 
@@ -45,8 +52,15 @@ MCU는 홀로노믹(방향각) 구동이라 전방 0 / 후방 180 / 좌우 ±90�
 ### 동작 규칙
 
 - **시작 handshake**: `{"cmd":"ready"}` 전송 (Android 앱과 동일), 5초마다 `{"cmd":"gin"}` 상태 요청
-- **매핑**: `|linear.x|/(max)` 또는 `|angular.z|/(max)` 중 우세 성분 → power 0~100.
-  전진/후진/좌strafe/우strafe 4방향. 제자리 회전은 불가(strafe로 대체)
+- **구동 모델(운영자 확인)**: MCU `move(power, angle)`는 차동 운동학 `(v, ω)`의
+  **극좌표(polar) 표현**이다 — angle 0=전진, 180=후진, **+90=제자리左转(두 다리 반대
+  방향)**, −90=제자리右转, 사이 각도=전진하며 호(arc) 회전.
+  ([robotics.SE q18048](https://robotics.stackexchange.com/q/18048)의 IK를 정규화 극좌표로 재표현)
+- **mapping_mode 파라미터 3종**:
+  - `differential` (기본, teleop용): Twist 우세 성분 → 0/180/±90 4방향 양자화
+  - `tank` (nav2 내비게이션용): `(vx/max_lin, wz/max_ang)` → `power=√(v²+ω²)·100`,
+    `angle=atan2(ω, v)` — 연속 각도, 회전 포함 (함수: `twist_mapping.tank_to_move`)
+  - `holonomic`: (vx, vy) 병진 가설용 — 구동 모델 확인 결과 **사용 안 함** (코드만 잔존)
 - **안전**: `cmd_vel_timeout`(0.5s) 내 Twist 없으면 `power:0` 1회 전송.
   `Twist=0` 수신 시 즉시 정지. 충전 중(`charging-status != 0`)이면 move 차단 (Commander 인터록)
 - **직렬 포트 우선순위**: 명시 ROS 파라미터 > `r2d2/config_local.json`
@@ -79,9 +93,11 @@ MCU는 홀로노믹(방향각) 구동이라 전방 0 / 후방 180 / 좌우 ±90�
   (또는 `ld14p.launch.py`)
 - ⚠️ **빌드만 확인됨. LD19 본체 미연결 — 실물 런타임 테스트 남아있음**
 
-## 3. SLAM — `hector_slam_humble`
+## 3. SLAM — `hector_slam`
 
-- 출처: `https://github.com/KiiiLin/hector_slam_humble` (Humble용, 15개 패키지)
+- 출처: `https://github.com/KiiiLin/hector_slam_humble` (Humble용, 15개 패키지).
+  폴더명은 Jazzy 구동에 맞춰 `src/hector_slam`으로 rename했고, 내부 15개 패키지의
+  이름(`hector_mapping` 등)은 원본 그대로.
 - Jazzy适配: `hector_compressed_map_transport/src/map_to_image_node.cpp`의
   `#include <cv_bridge/cv_bridge.h>` → `<cv_bridge/cv_bridge.hpp>` (Jazzy에서 .h 제거됨).
   나머지 패키지는 무수정 빌드
@@ -100,16 +116,111 @@ MCU는 홀로노믹(방향각) 구동이라 전방 0 / 후방 180 / 좌우 ±90�
 map ──(hector)──▶ base_link ──(ldlidar static, z=0.18)──▶ base_laser
 ```
 
-## 4. 통합 — `r2d2_bringup`
+## 4. IMU — `ros2_mpu6050` (kimsniper)
+
+- 출처: `https://github.com/kimsniper/ros2_mpu6050` (i2c-dev C++ 드라이버 +
+  **별도 캘리브레이션 유틸** 내장 — 선택 이유)
+- 시스템 의존성: `sudo apt install libi2c-dev i2c-tools` ✅ 설치 완료
+- 출력: `imu/mpu6050` 토픽 `sensor_msgs/Imu` (100Hz 고정 타이머,
+  가속도 m/s² + 각속도 rad/s, **orientation은 무효 표시**(-1 covariance) —
+  MPU6050에 지자기 센서가 없고 이 드라이버도 필터를 계산하지 않음)
+- 캘리브레이션 (센서 연결 후, 로봇 정지 상태에서):
+  ```bash
+  ros2 run ros2_mpu6050 ros2_mpu6050_calibrate [디바이스] [주소]   # 기본 /dev/i2c-1 0x68
+  #   → 500샘플 평균 offset을 화면에 출력. values를 config/params.yaml의
+  #     gyro_*_offset / accel_*_offset에 기입 (gyro [deg/s], accel [m/s²])
+  ```
+- 로컬 패치 (Pi5/Jazzy适配):
+  - `device`(`/dev/i2c-1`), `i2c_address`(0x68), `imu_frame`(`base_link`) ROS
+    파라미터 추가 — upstream은 생성자 디폴트 인자로만 하드코딩
+  - 캘리브레이션 유틸에 argv로 디바이스/주소 인자 추가
+    (Pi5 두 자리 버스 `/dev/i2c-13`·`-14`, AD0-High 0x69 보드 지원)
+  - `<array>` include 추가 (GCC13+에서 transitive include 제거 → 빌드 오류)
+- 사용:
+  ```bash
+  ros2 launch ros2_mpu6050 ros2_mpu6050.launch.py            # config/params.yaml
+  ros2 launch ros2_mpu6050 ros2_mpu6050.launch.py param_file:=/path/to/my.yaml
+  ros2 topic echo /imu/mpu6050 --once
+  ```
+- 센서 미연결 시 동작(확인됨): `/dev/i2c-1` open은 성공 → device ID 검증 실패로
+  `MPU6050 initialization failed!` 출력 후 프로세스는 살아있음. 연결 후 정상화
+- **imu_filter_madgwick 검토 결론: 현 구성에서는 불필요 (보류)**
+  - hector SLAM은 `/scan`만 사용 — IMU 불필요
+  - `hector_imu_attitude_to_tf`는 `imu.orientation`(quaternion)을 그대로
+    소비하는데 이 드라이버는 orientation을 발행하지 않음 → attitude TF를
+    원할 때만필요
+  - 필요해지는 시점(기울임 감시 / robot_localization EKF 등):
+    `sudo apt install ros-jazzy-imu-filter-madgwick` 후
+    `/imu/mpu6050` → `imu_filter_madgwick` → orientation 있는 `imu/data` →
+    `hector_imu_attitude_to_tf` 순으로 연결. MAG 없는 MPU6050 특성상
+    yaw는 드리프트 (roll/pitch는 accel 보정되어 실용적)
+- ⚠️ **빌드·launch 검증 완료 / MPU6050 본체 미연결 — 실물 테스트 남아있음**
+
+## 5. 통합 — `r2d2_bringup`
 
 ```bash
 ros2 launch r2d2_bringup r2d2_bringup.launch.py                      # motor+lidar+slam
 ros2 launch r2d2_bringup r2d2_bringup.launch.py mock:=true enable_lidar:=false
 ros2 launch r2d2_bringup r2d2_bringup.launch.py lidar_product:=LDLiDAR_LD14P
+ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=true imu_device:=/dev/i2c-1
 ```
 
-인자: `enable_motor`/`enable_lidar`/`enable_slam`, `mock`,
-`lidar_port`(ttyAMA1), `lidar_product`, `lidar_baudrate`, `hector_params`(yaml 경로)
+인자: `enable_motor`/`enable_lidar`/`enable_slam`/`enable_imu`, `mock`,
+`lidar_port`(ttyAMA1), `lidar_product`, `lidar_baudrate`, `hector_params`(yaml 경로),
+`imu_device`(/dev/i2c-1), `imu_frame`(base_link)
+
+## 6. 내비게이션 — `r2d2_navigation`
+
+linorobot2_navigation 구조(launch/config/maps/rviz)를 참고하되, **차동 + no-odometry**
+사양에 맞춰 재설계했습니다.
+
+```
+r2d2_navigation/
+├── config/nav2_params.yaml      # nav2 1.3.13 검증 완료
+├── config/hector_nav.yaml       # 내비 모드 hector (지도 원점 분리)
+├── launch/navigation.launch.py  # motor+lidar+hector+map_server+nav2 core
+├── maps/placeholder.{pgm,yaml}  # 10×10m 방 (임시, 실측 지도로 교체)
+├── rviz/nav2_config.rviz
+└── scripts/save_map.sh          # /live_map → nav2 지도 저장
+```
+
+### 구동/추정 아키텍처 (핵심 결정)
+
+| 계층 | 선택 | 이유 |
+|---|---|---|
+| 모션 | `r2d2_motor mapping_mode:=tank` | MCU (power, angle) = (v, ω) 극좌표 (운영자 확인, SE q18048) |
+| 컨트롤러 | MPPI `motion_model: DiffDrive` (wz_max 0.8) | 기본 critics 전체 유효 (회전 가능) |
+| 플래너 | NavFn | diff 로봇 표준, 경로에 heading 포함 |
+| 위치추정 | **hector_mapping 상시 구동** (scan matching → `map→base_link` TF) | wheel odom 없음 → AMCL/odometry 불가. hector의 존재 이유 |
+| 자기위치 보정 | RViz **2D Pose Estimate** → `/initialpose` (hector resetPose, [HectorMappingRos.cpp:670]) | 홈 출발 규칙 불필요. 지도에서 위치 클릭으로 좌표 정렬 |
+| 지도 | `map_server`가 저장 지도 `/map` 발행, hector live map은 `/live_map`으로 remap (frame은 `map` 공유) | costmap 입력과 live 매핑의 토픽 충돌 방지 |
+| goal checker | xy 0.15 / **yaw 0.25** (회전 유효) | — |
+| BT | nav2 기본 recovery tree (**Spin 포함** 가능) | 커스텀 no-spin 트리 폐기됨 |
+
+### 지도 워크플로 (hector → nav2)
+
+```bash
+# 1) 매핑: bringup으로 hector SLAM 구동, 로봇 주행하며 지도 채집
+ros2 launch r2d2_bringup r2d2_bringup.launch.py
+
+# 2) 저장: /live_map(hector 실시간 지도)을 nav2 형식으로
+ros2 run r2d2_navigation save_map.sh maps/r2d2_home
+#    (map_saver_cli -p map_topic:=live_map)
+
+# 3) 내비: 저장 지도 사용 + hector가 실시간 자기위치 추정
+ros2 launch r2d2_navigation navigation.launch.py map:=<절대경로>/r2d2_home.yaml
+#    RViz: rviz2 -d $(ros2 pkg prefix r2d2_navigation)/share/r2d2_navigation/rviz/nav2_config.rviz
+#    ① 2D Pose Estimate로 실제 위치 지정 → ② 2D Goal Pose로 목표 발행
+```
+
+`maps/placeholder.*`는 센서 미연결 단계에서 nav2 스택 전체 기동을 검증용으로
+커밋된 더미 지도입니다. 실측 지도가 있으면 `map:=`로 교체.
+
+### 검증 상태 (nav2)
+- 1.3.13 파라미터 실측 통과: SmacPlanner→NavFn 교체, MPPI DiffDrive,
+  NavigateToPoseNavigator, behavior spin복원, 전 서버 configure (headless,
+  mock+hector-off에서 map TF 대기 로그만 정상 출력)
+- ⬜ 실물 e2e (LiDAR/IMU/MCU 연결 후): `/scan`→hector→costmap→경로추종
 
 ## 빌드
 
@@ -117,7 +228,9 @@ ros2 launch r2d2_bringup r2d2_bringup.launch.py lidar_product:=LDLiDAR_LD14P
 cd ~/workspace/Neo-R2D2/ros2
 source /opt/ros/jazzy/setup.bash
 git clone --recursive https://github.com/ldrobotSensorTeam/ldlidar_ros2.git src/   # 최초 1회
-git clone https://github.com/KiiiLin/hector_slam_humble.git src/                   # 최초 1회
+git clone https://github.com/KiiiLin/hector_slam_humble.git src/hector_slam        # 최초 1회
+git clone https://github.com/kimsniper/ros2_mpu6050.git src/ros2_mpu6050  # 최초 1회
+sudo apt install libi2c-dev i2c-tools                     # IMU 드라이버에 필요 (설치 완료)
 colcon build                    # python은 --symlink-install 권장
 source install/setup.bash
 ```
@@ -126,28 +239,39 @@ source install/setup.bash
 
 | 항목 | 상태 |
 |---|---|
-| Twist→move 매핑 단위 테스트 | ✅ 11/11 (`colcon test`) |
+| Twist→move 매핑 단위 테스트 | ✅ 24/24 (`colcon test`, differential/holonomic/tank 포함) |
 | motor 노드 mock 스모크 | ✅ ready/gin/0.3→`power60 angle0` 300ms 반복/타임아웃 정지 확인 |
 | config 반영(ttyAMA0) | ✅ `config_local.json` 자동 로드, 파라미터 오버라이드 확인 |
-| 전체 패키지 빌드 | ✅ 17 packages, 0 failures (Pi5, Jazzy) |
+| 전체 패키지 빌드 | ✅ 0 failures (Pi5, Jazzy, nav2 1.3.13) |
 | bringup 기동 | ✅ motor(mock)+hector 파라미터 반영 확인 (LiDAR 제외) |
+| nav2 스택 headless 검증 | ✅ map_server/NavFn/MPPI-DiffDrive/BT(기본 트리)/behavior/velocity_smoother 전 서버 configure (mock, hector-off — TF 대기 로그만) |
+| nav2 실물 e2e | ⬜ LiDAR+MCU 연결 후 (§6 검증 상태) |
 | ldlidar 실물 | ⬜ 미연결 (빌드/launch 인자만 검증) |
 | MCU 실물 UART | ⬜ 미검증 |
+| ros2_mpu6050 빌드/launch | ✅ 패치 후 빌드 통과, launch/param 검증, 미연결 시 "initialization failed" 안내 확인 |
+| MPU6050 실물 | ⬜ 미연결 (연결 후 calibrate + /imu/mpu6050 확인 필요) |
 
 ## 실물 연결 시 체크리스트
 
 1. r2d2 앱 종료 (ttyAMA0 점유 확인: `fuser /dev/ttyAMA0`)
-2. strafe 방향 확인: `ros2 topic pub /cmd_vel ... angular:{z:0.5}` → 로봇이 왼쪽으로
-   밀려야 정상. 반대면 `invert_strafe:=true`
+2. 회전 방향 확인: `ros2 topic pub /cmd_vel ... angular:{z:0.5}` → 로봇이
+   **왼쪽(반시계)으로 제자리 회전**해야 정상 (H2 확인된 모델 기준). 반대면
+   `invert_strafe:=true`
 3. 속도 체감 보고 `max_linear_velocity` 조정 (power 스케일)
 4. LiDAR: `/dev/ttyAMA1` 없으면 Pi UART 오버레이(`config.txt`의 `enable_uart`/
    `dtoverlay=uart1`) 확인, `ros2 topic echo /scan --once`로 데이터 수신 확인
 5. SLAM: rviz2(원격 PC)에서 `/map` + `/scan` + TF 표시
 6. 충전 독에 물리면 move가 차단되는지 `gin` 응답으로 확인
+7. IMU(MPU6050): VCC→3.3V, GND, SDA/SCL을 쓰는 버스의 GPIO에 (i2c-1 = GPIO2/3),
+   AD0는 GND(0x68) 또는 VCC(0x69 — `i2c_address` 파라미터로 지원).
+   `i2cdetect -y 1`에 68 표시 확인 →
+   `ros2 run ros2_mpu6050 ros2_mpu6050_calibrate`로 offset 측정 →
+   `config/params.yaml` 기입 → `ros2 launch ros2_mpu6050 ros2_mpu6050.launch.py`
+   → `ros2 topic echo /imu/mpu6050 --once`
 
 ## 알려진 사항
 
-- `src/ldlidar_ros2`, `src/hector_slam_humble`는 별도 git 저장소(클론)로 리포에
-  미추적. 부모 리포에 커밋하려면 git submodule 등록이나 `.git` 제거 후 vendoring 결정 필요
+- `src/ldlidar_ros2`, `src/hector_slam`은 vendoring 완료(네스트 .git 제거,
+  본 리포에 커밋됨). `src/ros2_mpu6050`도 커밋 시 `.git` 제거 필요
 - `r2d2_link.py`는 `r2d2` 패키지의 벤더본 — 원본 프로토콜 변경 시 동기화 필요
 - `build/`, `install/`, `log/`은 `ros2/.gitignore`로 제외

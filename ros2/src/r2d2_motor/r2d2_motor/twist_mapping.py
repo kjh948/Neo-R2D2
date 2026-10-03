@@ -58,6 +58,71 @@ def twist_to_move(linear_x: float, angular_z: float, mapping: MoveMapping) -> tu
     return _scale_power(power, mapping.min_power), angle
 
 
+def holonomic_to_move(linear_x: float, linear_y: float, mapping: MoveMapping) -> tuple:
+    """Continuous holonomic mapping for nav2-style Twists (vx, vy).
+
+    The MCU accepts any direction angle (0 forward, +90 left strafe, ...), so
+    a velocity command (vx, vy) becomes power = |(vx, vy)| scaled to 0..100
+    and angle = atan2(vy, vx) in degrees. ``angular.z`` is ignored: the robot
+    physically cannot rotate, so callers (RPP/GVF etc.) must run with
+    rotate-to-heading disabled and yaw-insensitive goal checking.
+    """
+    if mapping.invert_strafe:
+        linear_y = -linear_y
+
+    norm = _clamp(_hypot(linear_x, linear_y) / max(mapping.max_linear_velocity, 1e-6))
+    if norm <= mapping.deadband:
+        return 0, ANGLE_FORWARD
+
+    angle = round(_atan2_deg(linear_y, linear_x))
+    # Keep the stop-frame convention stable when power rounds down to zero.
+    power = _scale_power(norm, mapping.min_power)
+    return power, angle
+
+
+def tank_to_move(linear_x: float, angular_z: float, mapping: MoveMapping) -> tuple:
+    """Differential (tank-drive) mapping matching the MCU's polar (v, omega) frame.
+
+    Operator-confirmed semantics of `move(power, angle)`:
+      angle 0   = forward      (v>0,  omega=0)
+      angle 180 = reverse      (v<0,  omega=0)
+      angle +90 = rotate left  (v=0,  omega>0)   [legs opposite]
+      angle -90 = rotate right
+      in between = forward arc turning that way
+
+    So the frame is (power, angle) = polar form of (v, omega).  We normalise
+    vx by max_linear_velocity and wz by max_angular_velocity (both become
+    dimensionless [-1, 1], which is the unit-conversion trap from
+    robotics.SE q18048), then re-express in polar:
+
+        power = hypot(v_n, w_n) * 100      angle = atan2(w_n, v_n)
+
+    ``invert_strafe`` flips the rotation sense (use it if +90 turns right).
+    """
+    v_n = _clamp(linear_x / max(mapping.max_linear_velocity, 1e-6))
+    w_n = _clamp(angular_z / max(mapping.max_angular_velocity, 1e-6))
+    if mapping.invert_strafe:
+        w_n = -w_n
+
+    if _hypot(v_n, w_n) <= mapping.deadband:
+        return 0, ANGLE_FORWARD
+
+    angle = round(_atan2_deg(w_n, v_n))
+    power = _scale_power(_hypot(v_n, w_n), mapping.min_power)
+    # atan2 gives (-180, 180]; MCU uses 180 for reverse already.
+    return power, angle
+
+
+def _hypot(x: float, y: float) -> float:
+    return (x * x + y * y) ** 0.5
+
+
+def _atan2_deg(y: float, x: float) -> float:
+    import math
+
+    return math.degrees(math.atan2(y, x))
+
+
 def _clamp(value: float) -> float:
     return max(-1.0, min(1.0, value))
 

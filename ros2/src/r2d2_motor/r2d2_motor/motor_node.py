@@ -21,7 +21,7 @@ from rclpy.node import Node
 
 from .mcu_client import McuClient
 from .mcu_config import load_mcu_config
-from .twist_mapping import MoveMapping, twist_to_move
+from .twist_mapping import MoveMapping, holonomic_to_move, tank_to_move, twist_to_move
 
 
 class MotorNode(Node):
@@ -41,6 +41,7 @@ class MotorNode(Node):
         self.declare_parameter("deadband", 0.02)
         self.declare_parameter("min_power", 1)
         self.declare_parameter("invert_strafe", False)
+        self.declare_parameter("mapping_mode", "differential")
         self.declare_parameter("cmd_vel_timeout", 0.5)
         self.declare_parameter("repeat_period", 0.3)
         self.declare_parameter("gin_period", 5.0)
@@ -64,6 +65,11 @@ class MotorNode(Node):
         baudrate = int(resolve("baudrate", "baudrate", 115200))
         read_timeout = float(resolve("serial_read_timeout", "serial_read_timeout", 1.0))
         mock = bool(self.get_parameter("mock").value or cfg.get("mock_serial", False))
+
+        mode = str(self.get_parameter("mapping_mode").value).strip().lower()
+        if mode not in ("differential", "holonomic", "tank"):
+            raise ValueError(f"unknown mapping_mode {mode!r} (differential|holonomic|tank)")
+        self._mode = mode
 
         self._mapping = MoveMapping(
             max_linear_velocity=self.get_parameter("max_linear_velocity").value,
@@ -121,7 +127,12 @@ class MotorNode(Node):
         if twist is None:
             return
 
-        power, angle = twist_to_move(twist.linear.x, twist.angular.z, self._mapping)
+        if self._mode == "holonomic":
+            power, angle = holonomic_to_move(twist.linear.x, twist.linear.y, self._mapping)
+        elif self._mode == "tank":
+            power, angle = tank_to_move(twist.linear.x, twist.angular.z, self._mapping)
+        else:
+            power, angle = twist_to_move(twist.linear.x, twist.angular.z, self._mapping)
 
         if power == 0 or stale:
             if self._driving:

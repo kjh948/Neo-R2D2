@@ -36,6 +36,8 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("repeat_period", default_value="0.3",
                               description="Seconds between repeated move frames while driving"),
         DeclareLaunchArgument("invert_strafe", default_value="false"),
+        DeclareLaunchArgument("mapping_mode", default_value="differential",
+                              description="'differential' (teleop 4-dir) or 'holonomic' (nav2 vx/vy)"),
         Node(
             package="r2d2_motor",
             executable="motor_node",
@@ -52,6 +54,7 @@ def generate_launch_description() -> LaunchDescription:
                 "cmd_vel_timeout": ParameterValue(LaunchConfiguration("cmd_vel_timeout"), value_type=float),
                 "repeat_period": ParameterValue(LaunchConfiguration("repeat_period"), value_type=float),
                 "invert_strafe": ParameterValue(LaunchConfiguration("invert_strafe"), value_type=bool),
+                "mapping_mode": ParameterValue(LaunchConfiguration("mapping_mode"), value_type=str),
             }],
         ),
     ])

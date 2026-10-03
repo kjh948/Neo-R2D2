@@ -1,0 +1,32 @@
+# hector_mapping in navigation mode: it is the *localization* engine (publishes
+# map->base_link TF via scan matching, no odom needed) while map_server owns
+# the authoritative costmap map. Its own live map is republished on
+# /live_map* (launch remaps the topic) so it never fights map_server's /map.
+# Re-localize with RViz 2D Pose Estimate -> /initialpose (hector resetPose).
+/**:
+  ros__parameters:
+    map_frame: "map"
+    odom_frame: "base_link"
+    base_frame: "base_link"
+    scan_topic: "scan"
+
+    map_resolution: 0.05
+    map_size: 600
+    map_start_x: 0.5
+    map_start_y: 0.5
+    map_multi_res_levels: 1     # single level so only map/map_metadata exist
+    map_pub_period: 3.0
+
+    laser_min_dist: 0.05
+    laser_max_dist: 12.0
+
+    map_update_distance_thresh: 0.4
+    map_update_angle_thresh: 0.9
+    update_factor_free: 0.4
+    update_factor_occupied: 0.9
+
+    use_tf_scan_transformation: true
+    use_tf_pose_start_estimate: false
+    map_with_known_poses: false
+    pub_map_odom_transform: true
+    pub_drawings: false

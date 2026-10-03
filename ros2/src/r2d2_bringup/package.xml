@@ -9,6 +9,7 @@
 
   <exec_depend>r2d2_motor</exec_depend>
   <exec_depend>ldlidar_ros2</exec_depend>
+  <exec_depend>ros2_mpu6050</exec_depend>
   <exec_depend>hector_mapping</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 
