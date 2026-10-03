@@ -125,6 +125,26 @@ ENGLISH_VOICE_PHRASES: Dict[VoiceCommand, List[str]] = {
     VoiceCommand.STOP: ["stop", "stop here", "rest for a while"],
 }
 
+KOREAN_VOICE_PHRASES: Dict[VoiceCommand, List[str]] = {
+    VoiceCommand.WAKE_UP: ["알투디투", "알 투 디 투", "좋은 아침"],
+    VoiceCommand.TURN_LEFT: ["왼쪽으로 돌아", "왼쪽 돌아"],
+    VoiceCommand.TURN_RIGHT: ["오른쪽으로 돌아", "오른쪽 돌아"],
+    VoiceCommand.GO_FORWARD: ["앞으로 가", "직진"],
+    VoiceCommand.SHAKE_HEAD: ["고개 흔들어", "고개를 흔들어"],
+    VoiceCommand.WALK_A_CIRCLE: ["한 바퀴 돌아", "원을 그려"],
+    VoiceCommand.DANCE: ["춤춰", "춤을 춰"],
+    VoiceCommand.WHO_ARE_YOU: ["너 누구야", "누구야"],
+    VoiceCommand.LIGHT_SABER: ["광선검", "광선검 꺼내"],
+    VoiceCommand.ARMS: ["팔 움직여", "팔을 움직여"],
+    VoiceCommand.PATROL: ["순찰", "순찰해"],
+    VoiceCommand.STOP: ["멈춰", "정지", "그만"],
+}
+
+ENGLISH_KOREAN_VOICE_PHRASES: Dict[VoiceCommand, List[str]] = {
+    command: ENGLISH_VOICE_PHRASES.get(command, []) + KOREAN_VOICE_PHRASES.get(command, [])
+    for command in set(ENGLISH_VOICE_PHRASES) | set(KOREAN_VOICE_PHRASES)
+}
+
 
 class VoiceToEventHandler:
     """Port of ``VoiceToEventHandler``: recognised phrase -> robot behaviour.
@@ -144,8 +164,14 @@ class VoiceToEventHandler:
     ) -> None:
         self.events = events
         self.mode_controller = mode_controller
-        if phrases is None and language.lower() in {"en", "english"}:
-            phrases = ENGLISH_VOICE_PHRASES
+        if phrases is None:
+            normalized_language = language.lower().replace("_", "-")
+            if normalized_language in {"en", "english"}:
+                phrases = ENGLISH_VOICE_PHRASES
+            elif normalized_language in {"ko", "korean"}:
+                phrases = KOREAN_VOICE_PHRASES
+            elif normalized_language in {"en-ko", "ko-en", "bilingual", "english-korean", "korean-english"}:
+                phrases = ENGLISH_KOREAN_VOICE_PHRASES
         table: Dict[str, VoiceCommand] = {}
         for command, entries in (phrases or VOICE_PHRASES).items():
             for phrase in entries:

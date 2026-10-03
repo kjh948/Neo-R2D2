@@ -1,0 +1,24 @@
+# navstack runtime (Mac + Pi5), visualnav-transformer backend.
+#
+# torch: Intel macOS is pinned to the last x86 wheel (2.2.2) and needs
+# numpy<2 on that platform. On Pi5 / Apple Silicon use the default CPU wheels:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+numpy>=1.24
+pillow>=9.0
+websockets>=13.0
+pyyaml>=6.0
+einops>=0.6            # vendored ConditionalUnet1D (NoMaD)
+# DDPMScheduler only. The pins below are the combination that still imports on
+# the last Intel-macOS torch (2.2.2); newer diffusers touch torch.xpu, and
+# huggingface_hub>=0.26 dropped cached_download that diffusers 0.27 imports.
+diffusers==0.27.2 ; platform_machine == "x86_64" and sys_platform == "darwin"
+huggingface_hub<0.26 ; platform_machine == "x86_64" and sys_platform == "darwin"
+efficientnet_pytorch>=0.7
+warmup_scheduler>=0.3  # unpickling vint.pth references this module
+opencv-python-headless>=4.5   # camera capture; swap to opencv-python for --show
+# torch/torchvision (see comment above) and the vint_train package:
+#   pip install -e visualnav-transformer/train --no-deps
+
+# dev/tests
+pytest>=7.0
+gdown>=4.6             # scripts/fetch_vint_weights.sh

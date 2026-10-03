@@ -24,6 +24,7 @@ from .transport import JsonLineTransport
 from .updater import Updater
 from .vision import CameraWorker, FaceDetector
 from .voice import VoiceRecognizer, VoiceToEventHandler
+from .vosk_bridge import VoskBridge
 from .web import WebConsoleServer
 from .wifi import WifiService
 
@@ -103,6 +104,13 @@ class RobotApplication:
         self.camera.on_frame = self._handle_frame
         self.voice_handler = VoiceToEventHandler(self.events, language=config.voice_language)
         self.voice = VoiceRecognizer(self.voice_handler)
+        self.vosk = VoskBridge(
+            self.voice,
+            model_path=config.vosk_english_model_path,
+            korean_model_path=config.vosk_korean_model_path,
+            language=config.voice_language,
+            audio_device=config.audio_device,
+        ) if config.vosk_english_model_path or config.vosk_korean_model_path else None
         self.mode_controller = ModeController(
             events=self.events,
             lights=self.lights,
@@ -209,7 +217,10 @@ class RobotApplication:
         if self.config.face_detection_enabled:
             self.central.start_face_detection(force=True)
         if self.config.voice_recognition_enabled:
-            self.central.start_voice_recognition()
+            if self.vosk is not None:
+                self.vosk.start()
+            else:
+                self.central.start_voice_recognition()
 
         self.sound.play_id(LONELY_HELLO, True)
         LOG.info("robot %s (%s) ready", self.state.name, self.state.udid)
@@ -231,6 +242,8 @@ class RobotApplication:
             self.web.stop()
             self.web = None
         self.central.stop_all_control()
+        if self.vosk is not None:
+            self.vosk.stop()
         self.mode_controller.close()
         self.events.close()
         self.camera.release()
