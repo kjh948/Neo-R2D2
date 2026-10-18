@@ -233,7 +233,11 @@ HectorMappingRos::HectorMappingRos()
   RCLCPP_INFO(this->get_logger(), "HectorSM p_laser_z_min_value_: %f", p_laser_z_min_value_);
   RCLCPP_INFO(this->get_logger(), "HectorSM p_laser_z_max_value_: %f", p_laser_z_max_value_);
 
-  scanSubscriber_ = this->create_subscription<sensor_msgs::msg::LaserScan>(p_scan_topic_, p_scan_subscriber_queue_size_, 
+  // SensorDataQoS (best effort) — coin_d4_driver publishes /scan with
+  // rclcpp::SensorDataQoS(); a RELIABLE subscriber would never bind to it
+  // (silent mismatch -> no scanCallback -> no map->base_link TF).
+  scanSubscriber_ = this->create_subscription<sensor_msgs::msg::LaserScan>(p_scan_topic_,
+    rclcpp::SensorDataQoS().keep_last(p_scan_subscriber_queue_size_),
     std::bind(&HectorMappingRos::scanCallback, this, std::placeholders::_1));
   sysMsgSubscriber_ = this->create_subscription<std_msgs::msg::String>(p_sys_msg_topic_, 2, 
     std::bind(&HectorMappingRos::sysMsgCallback, this, std::placeholders::_1));

@@ -12,7 +12,7 @@ Visualization Manager:
     - Class: rviz_default_plugins/Map
       Name: Saved Map (costmap source)
       Topic:
-        Name: /map
+        Value: /map
         Reliability Policy: Reliable
         Durability Policy: Volatile
       Color Scheme: map
@@ -20,7 +20,7 @@ Visualization Manager:
     - Class: rviz_default_plugins/Map
       Name: Live Map (hector)
       Topic:
-        Name: /live_map
+        Value: /live_map
         Reliability Policy: Reliable
         Durability Policy: Volatile
       Color Scheme: costmap
@@ -29,7 +29,7 @@ Visualization Manager:
     - Class: rviz_default_plugins/LaserScan
       Name: LaserScan
       Topic:
-        Name: /scan
+        Value: /scan
         Reliability Policy: Best Effort
         Durability Policy: Volatile
       Size (m): 0.03
@@ -42,7 +42,7 @@ Visualization Manager:
     - Class: rviz_default_plugins/Map
       Name: Global Costmap
       Topic:
-        Name: /global_costmap/costmap
+        Value: /global_costmap/costmap
         Reliability Policy: Reliable
         Durability Policy: Volatile
       Color Scheme: costmap
@@ -51,7 +51,7 @@ Visualization Manager:
     - Class: rviz_default_plugins/Map
       Name: Local Costmap
       Topic:
-        Name: /local_costmap/costmap
+        Value: /local_costmap/costmap
         Reliability Policy: Reliable
         Durability Policy: Volatile
       Color Scheme: costmap
@@ -60,7 +60,7 @@ Visualization Manager:
     - Class: rviz_default_plugins/Path
       Name: Plan
       Topic:
-        Name: /plan
+        Value: /plan
         Reliability Policy: Reliable
       Color: 0; 255; 0
       Enabled: true
