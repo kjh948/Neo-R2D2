@@ -197,16 +197,19 @@ r2d2_navigation/
 ### 지도 워크플로 (hector → nav2)
 
 ```bash
-# 1) 매핑: bringup으로 hector SLAM 구동, 로봇 주행하며 지도 채집
-ros2 launch r2d2_bringup r2d2_bringup.launch.py
+# 1) 매핑: Pi에서 bringup으로 hector SLAM 구동, 원격 PC의 RViz로 확인하며 주행 (§7)
+ros2 launch r2d2_bringup r2d2_bringup.launch.py            # Pi
+ros2 launch r2d2_bringup remote.launch.py                   # 원격 PC (rviz_slam.rviz)
 
-# 2) 저장: /live_map(hector 실시간 지도)을 nav2 형식으로
-ros2 run r2d2_navigation save_map.sh maps/r2d2_home
-#    (map_saver_cli -p map_topic:=live_map)
+# 2) 저장: bringup 세션은 /map 기본값 그대로
+ros2 run r2d2_navigation save_map.sh maps/r2d2_home         # Pi 또는 원격(어디서든)
+#    navigation 세션(실시간지도가 /live_map으로 remap됨)일 때:
+MAP_TOPIC=live_map ros2 run r2d2_navigation save_map.sh maps/r2d2_home
 
 # 3) 내비: 저장 지도 사용 + hector가 실시간 자기위치 추정
 ros2 launch r2d2_navigation navigation.launch.py map:=<절대경로>/r2d2_home.yaml
-#    RViz: rviz2 -d $(ros2 pkg prefix r2d2_navigation)/share/r2d2_navigation/rviz/nav2_config.rviz
+#    원격 RViz: ros2 launch r2d2_bringup remote.launch.py \
+#        rviz_config:=$(ros2 pkg prefix r2d2_navigation)/share/r2d2_navigation/rviz/nav2_config.rviz
 #    ① 2D Pose Estimate로 실제 위치 지정 → ② 2D Goal Pose로 목표 발행
 ```
 
@@ -218,6 +221,73 @@ ros2 launch r2d2_navigation navigation.launch.py map:=<절대경로>/r2d2_home.y
   NavigateToPoseNavigator, behavior spin복원, 전 서버 configure (headless,
   mock+hector-off에서 map TF 대기 로그만 정상 출력)
 - ⬜ 실물 e2e (LiDAR/IMU/MCU 연결 후): `/scan`→hector→costmap→경로추종
+
+## 7. 원격 PC 세팅 (RViz — hector 매핑/내비 모니터링)
+
+Pi에는 디스플레이가 없으므로 `/map` 시각화·지도 저장·2D Pose Estimate는 원격 PC의
+RViz 2가 담당한다. **원격 PC는 노드를 직접 실행하지 않는다** — 같은 DDS 도메인으로
+Pi의 토픽/TF를 구독만 하면 되므로 드라이버(coin_d4_driver, hector_slam, motor)를
+원격에 빌드할 필요가 없다.
+
+### 1) ROS 2 설치 (Ubuntu 24.04 — Jazzy가 Pi와 동일)
+
+```bash
+# ROS 2 Jazzy 기본 설치 후, RViz 포함 데스크톱 메타패키지를 추가:
+sudo apt install ros-jazzy-desktop
+# ⚠️ 이 로봇은 CycloneDDS를 쓰므로(Pi ~/.bashrc에 export 고정) 원격에도 같은
+#    RMW를 설치·지정해야 디스커버리가 된다. FastDDS(기본)로 두면 토픽이 안 보인다:
+sudo apt install ros-jazzy-rmw-cyclonedds-cpp
+echo 'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp' >> ~/.bashrc
+# (지도 저장도 원격에서 하려면) sudo apt install ros-jazzy-navigation2
+```
+
+### 2) 이 워크스페이스의 원격 부분만 받기 (launch/config용)
+
+```bash
+git clone <Neo-R2D2 repo> && cd Neo-R2D2/ros2
+colcon build --packages-select r2d2_bringup     # ament_python 단 몇 초
+source install/setup.bash
+ros2 launch r2d2_bringup remote.launch.py        # = rviz2 -d config/rviz_slam.rviz
+```
+
+빌드 자체가 귀찮으면 클론 없이 파일만 옮겨 실행해도 된다:
+`rviz2 -d rviz_slam.rviz` (git으로 해당 파일만 받아도 무방).
+
+### 3) 네트워크/DDS 설정 (Pi와 원격 PC)
+
+| 항목 | 설정 |
+|---|---|
+| `RMW_IMPLEMENTATION` | **양쪽 다 `rmw_cyclonedds_cpp`** — Pi는 `~/.bashrc`에 export됨(120행). RMW가 다르면(예: 원격이 DDS 기본 FastDDS) 디스커버리가 안 돼 토픽이 0개 |
+| 물리 연결 | 같은 LAN 서브넷 권장(유선>와이파이). 스마트폰 테더링/기업 AP는 **AP isolation** 차단 흔함 |
+| `ROS_DOMAIN_ID` | 양쪽 동일 (미지정 = 0. Pi `~/.bashrc`에 `export ROS_DOMAIN_ID=…`로 고정해뒀다면 원격도 동일값) |
+| `ROS_LOCALHOST_ONLY` | 양쪽 `0`(기본값). 실수로 `1`이면 원격이 아무 토픽도 못 본다 |
+| IP 확인 | Pi: `hostname -I`. DNS보다 IP 지정이 안정적 |
+
+동작 확인 (Pi에서 bringup 구동 중 원격 PC에서):
+
+```bash
+source /opt/ros/jazzy/setup.bash   # (워크스페이스 소스 불필요 — 원격 토픽 구독만)
+ros2 daemon stop && ros2 daemon start     # 이전 캐시 초기화 (단골 실수)
+ros2 topic list               # /scan /map /tf 가 보이면 성공
+ros2 topic hz /scan           # 대략 5Hz 정도 수신 확인
+```
+
+**멀티캐스트가 막히는 네트워크**(학교/사무실 WiFi)에서 안 보이면: CycloneDDS 유니캐스트
+피어 지정으로 우회 가능 — 안 막히는 쪽(Pi)은 그대로 두고, 원격 PC에서만:
+
+```bash
+export CYCLONEDDS_URI='<CycloneDDS><Domain><General><AllowMulticast>false</AllowMulticast></General><Peers><Peer address="Pi_IP"/></Peers></Domain></CycloneDDS>'
+```
+
+그래도 여의치 않으면 폴백으로 `ssh -X`를 써 Pi에서 rviz를 직접 띄우기
+(`ssh -X pi@<ip>` → `rviz2 -d .../rviz_slam.rviz`) — Pi가 X11 포워딩, 느리지만 동작한다.
+
+### 4) 원격 PC에서의 everyday 사용 흐름
+
+- **매핑**: §6 워크플로 1)처럼 Pi bringup + 원격 `remote.launch.py` → map/scan/TF 확인
+- **지도 저장**: 원격에서 `MAP_TOPIC=map ros2 run r2d2_navigation save_map.sh ...`
+  (map_saver는 토픽 구독만 하면 되므로 어느 머신에서 실행하든 관계없다)
+- **내비**: `remote.launch.py rviz_config:=…/nav2_config.rviz` → 2D Pose Estimate/Goal 사용
 
 ## 빌드
 
