@@ -1,7 +1,7 @@
 # ros2 — Neo-R2D2 ROS 2 워크스페이스 (Jazzy)
 
 ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
-`/cmd_vel`(Twist) → MCU 모터 제어, LDROBOT LiDAR, hector SLAM, MPU6050 IMU,
+`/cmd_vel`(Twist) → MCU 모터 제어, COIN-D3 LiDAR, hector SLAM, MPU6050 IMU,
 그리고 nav2 내비게이션까지 한 번에 올립니다.
 
 ```
@@ -10,8 +10,8 @@ ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
                     └────────────┘                    │ MCU UART JSON
  /dev/ttyAMA0 ◀───────────────────────────────────────┘   {"cmd":"move",...}
 
-                    ┌────────────┐   /dev/ttyAMA1
- LD19/LD14P ───────▶│ ldlidar    │──▶ /scan
+                    ┌──────────────┐   /dev/ttyAMA1
+ COIN-D3 ──────────▶│coin_d4_driver│──▶ /scan
                     └────────────┘        │
                     ┌────────────┐        ▼
                     │ hector_    │──▶ /map, TF: map → base_link
@@ -28,7 +28,7 @@ ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
 |---|---|---|
 | `src/r2d2_motor/` | 직접 개발 (ament_python) | Twist → MCU `move` 프레임 변환 노드 |
 | `src/r2d2_bringup/` | 직접 개발 (ament_python) | motor + lidar + slam + imu 통합 launch |
-| `src/ldlidar_ros2/` | 외부 클론 | LDROBOT LiDAR 드라이버 (sdk 서브모듈 포함) |
+| `src/coin_d4_driver/` | 외부 클론 | ROBOTIS LiDAR 드라이버 (COIN-D3/D4, LDS-02/03 계열) |
 | `src/hector_slam_humble/` | 외부 클론 | hector SLAM (15개 패키지) |
 | `src/ros2_mpu6050/` | 외부 클론 | MPU6050 I2C IMU 드라이버 + calibrate 유틸 (Pi5/Jazzy 패치) |
 | `src/r2d2_navigation/` | 직접 개발 (ament_cmake) | Nav2 내비게이션 스택 + 지도 저장 스크립트 (§6) |
@@ -76,22 +76,19 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
 `deadband`(0.02), `min_power`(1), `invert_strafe`, `serial_port`, `baudrate`,
 `config_file`, `mock`, `cmd_vel_topic`
 
-## 2. LiDAR — `ldlidar_ros2`
+## 2. LiDAR — `coin_d4_driver`
 
-- 출처: `https://github.com/ldrobotSensorTeam/ldlidar_ros2` (sdk 서브모듈 포함 클론)
-- 지원 모델: LD06 / LD14 / LD14P / LD19. **우리 장비: LD19 (230400)**
-- 로컬 수정:
-  - `sdk/src/log_module.cpp`: `#include <pthread.h>` 추가
-    (GCC 13+는 pthread를 암시 포함하지 않음 — 서브모듈이라 `git submodule update` 시
-    재패치 필요)
-  - `launch/ld19.launch.py`, `launch/ld14p.launch.py`: `port_name`을 launch 인자로
-    파라미터화, 기본값 `/dev/ttyAMA1` (upstream은 `/dev/ttyUSB0` 하드코딩).
-    `product_name`, `serial_baudrate`, `frame_id`, TF 높이(`laser_tf_z`=0.18)도 인자화
-- 출력: `/scan` (frame `base_laser`), `base_link→base_laser` static TF 동시 발행
-- 구동: `ros2 launch ldlidar_ros2 ld19.launch.py port_name:=/dev/ttyAMA1`
-- LD14P 사용 시: `ros2 launch ldlidar_ros2 ld19.launch.py product_name:=LDLiDAR_LD14P`
-  (또는 `ld14p.launch.py`)
-- ⚠️ **빌드만 확인됨. LD19 본체 미연결 — 실물 런타임 테스트 남아있음**
+- 출처: `https://github.com/ROBOTIS-GIT/coin_d4_driver` (LDS 계열 드라이버, vendoring 완료)
+- 프로토콜은 `version` 파라미터로 선택: 1=M1C1_Mini_v1(115200), 2=M1C1_Mini_v2(150000),
+  3=M1CT_Coin_Plus(115200), 4=M1CT_TOF(230400) — baudrate는 version이 결정( yaml값 덮어씀).
+  **우리 장비: COIN-D3 (`params/single_lidar_node.yaml` 기준 version 4, `/dev/ttyAMA1`)**
+- 출력: `/scan`. 노드 이름은 `lidar_node`(하드코딩). **드라이버는 TF를 발행하지 않음** —
+  `base_link→base_laser` static TF(z=0.18)와 frame_id `base_laser` 오버라이드는
+  `r2d2_bringup`/`r2d2_navigation` launch에서 담당 (hector·nav2가 `base_laser` 사용)
+- 단독 구동: `ros2 launch coin_d4_driver single_lidar_node.launch.py`
+  (param 파일 갈아끼우기: `single_lidar_node_param:=...`)
+- ⚠️ 이전에 쓰던 `ldlidar_ros2`(LD19) 패키지는 삭제됨 (2026-10, COIN-D3 교체)
+- ✅ 실물 동작 확인됨 (COIN-D3, `/dev/ttyAMA1` — 운영자 검증)
 
 ## 3. SLAM — `hector_slam`
 
@@ -106,14 +103,14 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
 - 구성 (scan-only SLAM, `r2d2_bringup/config/hector_slam.yaml`):
   - `map_frame=map`, `odom_frame=base_link`, `base_frame=base_link` —
     wheel odom이 없어 hector가 `map→base_link`를 직접 발행
-  - LD19 한계 반영: `laser_min_dist=0.05`, `laser_max_dist=12.0`
+  - COIN-D3 한계 반영: `laser_min_dist=0.05`, `laser_max_dist=12.0`
   - 느린 보행에 맞춘 갱신 임계값: `map_update_distance_thresh=0.2`,
     `map_update_angle_thresh=0.15`, `map_resolution=0.05`, `map_size=600`(30m×30m)
 
 ### TF 트리 (구동 시)
 
 ```
-map ──(hector)──▶ base_link ──(ldlidar static, z=0.18)──▶ base_laser
+map ──(hector)──▶ base_link ──(bringup static TF, z=0.18)──▶ base_laser
 ```
 
 ## 4. IMU — `ros2_mpu6050` (kimsniper)
@@ -161,13 +158,13 @@ map ──(hector)──▶ base_link ──(ldlidar static, z=0.18)──▶ ba
 ```bash
 ros2 launch r2d2_bringup r2d2_bringup.launch.py                      # motor+lidar+slam
 ros2 launch r2d2_bringup r2d2_bringup.launch.py mock:=true enable_lidar:=false
-ros2 launch r2d2_bringup r2d2_bringup.launch.py lidar_product:=LDLiDAR_LD14P
+ros2 launch r2d2_bringup r2d2_bringup.launch.py lidar_version:=4
 ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=true imu_device:=/dev/i2c-1
 ```
 
 인자: `enable_motor`/`enable_lidar`/`enable_slam`/`enable_imu`, `mock`,
-`lidar_port`(ttyAMA1), `lidar_product`, `lidar_baudrate`, `hector_params`(yaml 경로),
-`imu_device`(/dev/i2c-1), `imu_frame`(base_link)
+`lidar_port`(ttyAMA1), `lidar_version`(coin_d4_driver protocol), `laser_tf_z`(0.18),
+`hector_params`(yaml 경로), `imu_device`(/dev/i2c-1), `imu_frame`(base_link)
 
 ## 6. 내비게이션 — `r2d2_navigation`
 
@@ -227,7 +224,7 @@ ros2 launch r2d2_navigation navigation.launch.py map:=<절대경로>/r2d2_home.y
 ```bash
 cd ~/workspace/Neo-R2D2/ros2
 source /opt/ros/jazzy/setup.bash
-git clone --recursive https://github.com/ldrobotSensorTeam/ldlidar_ros2.git src/   # 최초 1회
+git clone -b jazzy https://github.com/ROBOTIS-GIT/coin_d4_driver.git src/coin_d4_driver   # 최초 1회
 git clone https://github.com/KiiiLin/hector_slam_humble.git src/hector_slam        # 최초 1회
 git clone https://github.com/kimsniper/ros2_mpu6050.git src/ros2_mpu6050  # 최초 1회
 sudo apt install libi2c-dev i2c-tools                     # IMU 드라이버에 필요 (설치 완료)
@@ -246,7 +243,7 @@ source install/setup.bash
 | bringup 기동 | ✅ motor(mock)+hector 파라미터 반영 확인 (LiDAR 제외) |
 | nav2 스택 headless 검증 | ✅ map_server/NavFn/MPPI-DiffDrive/BT(기본 트리)/behavior/velocity_smoother 전 서버 configure (mock, hector-off — TF 대기 로그만) |
 | nav2 실물 e2e | ⬜ LiDAR+MCU 연결 후 (§6 검증 상태) |
-| ldlidar 실물 | ⬜ 미연결 (빌드/launch 인자만 검증) |
+| LiDAR 실물 (COIN-D3) | ✅ coin_d4_driver 스캔 수신 확인 (/dev/ttyAMA1) |
 | MCU 실물 UART | ⬜ 미검증 |
 | ros2_mpu6050 빌드/launch | ✅ 패치 후 빌드 통과, launch/param 검증, 미연결 시 "initialization failed" 안내 확인 |
 | MPU6050 실물 | ⬜ 미연결 (연결 후 calibrate + /imu/mpu6050 확인 필요) |
@@ -271,7 +268,12 @@ source install/setup.bash
 
 ## 알려진 사항
 
-- `src/ldlidar_ros2`, `src/hector_slam`은 vendoring 완료(네스트 .git 제거,
-  본 리포에 커밋됨). `src/ros2_mpu6050`도 커밋 시 `.git` 제거 필요
+- `src/coin_d4_driver`, `src/hector_slam`은 vendoring 완료(네스트 .git 제거,
+  본 리포에 커밋됨). `src/ros2_mpu6050`도 커밋 시 `.git` 제거 필요.
+  (구 `src/ldlidar_ros2`는 COIN-D3 교체로 삭제)
 - `r2d2_link.py`는 `r2d2` 패키지의 벤더본 — 원본 프로토콜 변경 시 동기화 필요
 - `build/`, `install/`, `log/`은 `ros2/.gitignore`로 제외
+
+
+## 구동팁
+- ros2 run teleop_twist_keyboard teleop_twist_keyboard 를 이용하여 모터제어

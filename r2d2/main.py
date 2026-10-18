@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import signal
 import sys
 import threading
@@ -85,6 +86,14 @@ def main(argv=None) -> int:
     configure_logging(level_from_name(args.log_level))
     if args.mock:
         LOG.info("mock mode: no serial, camera or audio output")
+
+    # An explicitly requested config must actually load. Silent fallback to
+    # defaults once meant a mistyped --config path booted the robot with
+    # allow_unpaired_clients=False and the wrong state file, surfacing as an
+    # unexplained grantAccess 401 in the web console.
+    if args.config and not os.path.isfile(args.config):
+        LOG.error("config file not found: %s (fix the path; refusing to run on defaults)", args.config)
+        return 2
 
     config = apply_args(Config.load(args.config), args)
     app = RobotApplication(config, mock=args.mock)

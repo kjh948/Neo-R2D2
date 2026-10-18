@@ -17,7 +17,7 @@ python3 -m r2d2 --mock --log-level debug
 
 # 실제 본체
 pip install -r r2d2/requirements.txt
-python3 -m r2d2 --port /dev/ttyS2 --config /etc/r2d2/config.json
+python3 -m r2d2 --port /dev/ttyAMA0 --config /etc/r2d2/config.json
 ```
 
 ### Vosk 음성 인식 테스트
@@ -102,7 +102,7 @@ python3 -m r2d2 --config r2d2/config_local.json --log-level debug
 
 ```bash
 python3 info/protocol/web_client.py --port 8887 move --power 50 --angle 0
-python3 info/protocol/uart_client.py --device /dev/ttyS2 gin
+python3 info/protocol/uart_client.py --device /dev/ttyAMA0 gin
 ```
 
 ## 웹 콘솔 (`r2d2/web/index.html`)
@@ -317,9 +317,9 @@ journalctl -fu r2d2
 ## 알려진 제약
 
 - **시리얼 경로는 보드에 따라 다릅니다.** Android 빌드는 `SerialPort.java`에
-  `/dev/ttyS2`를 하드코딩했지만, `info/mcu/pinout.md`의 배선(ESP32 GPIO1/GPIO3
+  `/dev/ttyAMA0`를 하드코딩했지만, `info/mcu/pinout.md`의 배선(ESP32 GPIO1/GPIO3
   ↔ Pi GPIO15/GPIO14)은 라즈베리파이 PL011 포트, 즉 `/dev/ttyAMA0`를 가리킵니다.
-  기본값은 원본과 동일하게 `/dev/ttyS2`이므로 `--port`로 실제 배선에 맞추세요.
+  기본값은 원본과 동일하게 `/dev/ttyAMA0`이므로 `--port`로 실제 배선에 맞추세요.
 - 블루투스 SPP(`:9100`, RFCOMM 비보안 채널, UUID `c8bb5a21-d5ab-458b-ab9a-f5b0c64637ac`)은
   옮기지 않았습니다. 같은 `CommandReceiver` 경로를 쓰므로 `ClientSession`을 하나
   더 붙이면 됩니다. 원본 APK에서도 `BluetoothService.start()`는 호출되지 않아

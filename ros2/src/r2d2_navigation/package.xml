@@ -11,7 +11,8 @@
 
   <exec_depend>r2d2_motor</exec_depend>
   <exec_depend>r2d2_bringup</exec_depend>
-  <exec_depend>ldlidar_ros2</exec_depend>
+  <exec_depend>coin_d4_driver</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
   <exec_depend>hector_mapping</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>nav2_navfn_planner</exec_depend>

@@ -4,13 +4,14 @@
     ros2 launch r2d2_bringup r2d2_bringup.launch.py
     ros2 launch r2d2_bringup r2d2_bringup.launch.py mock:=true          # UART 없이 구동 확인
     ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_lidar:=false
-    ros2 launch r2d2_bringup r2d2_bringup.launch.py lidar_product:=LDLiDAR_LD14P
+    ros2 launch r2d2_bringup r2d2_bringup.launch.py lidar_version:=3    # coin_d4_driver version param
     ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=true imu_device:=/dev/i2c-1
 
 Components (all individually switchable):
 * r2d2_motor  — /cmd_vel -> MCU move (UART owned by this node; the r2d2 app
                 must not run). Port/baud come from r2d2/config_local.json.
-* ldlidar     — ld19.launch.py include; publishes `scan` + base_link->base_laser TF.
+* coin_d4_driver — single_coin_d4_node publishes `scan`; the base_link->base_laser
+                static TF is started here (the driver itself publishes no TF).
 * hector_mapping — scan-only SLAM, config/hector_slam.yaml.
 """
 import os
@@ -28,7 +29,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     motor_share = get_package_share_directory("r2d2_motor")
-    lidar_share = get_package_share_directory("ldlidar_ros2")
+    lidar_share = get_package_share_directory("coin_d4_driver")
     bringup_share = get_package_share_directory("r2d2_bringup")
     try:
         imu_share = get_package_share_directory("ros2_mpu6050")
@@ -43,9 +44,12 @@ def generate_launch_description():
         DeclareLaunchArgument("mock", default_value="false",
                               description="motor node: log UART frames instead of hardware"),
         DeclareLaunchArgument("lidar_port", default_value="/dev/ttyAMA1"),
-        DeclareLaunchArgument("lidar_product", default_value="LDLiDAR_LD19",
-                              description="LDLiDAR_LD19 or LDLiDAR_LD14P"),
-        DeclareLaunchArgument("lidar_baudrate", default_value="230400"),
+        DeclareLaunchArgument("lidar_version", default_value="4",
+                              description="coin_d4_driver protocol version: "
+                                          "1=M1C1_Mini_v1, 2=M1C1_Mini_v2, "
+                                          "3=M1CT_Coin_Plus, 4=M1CT_TOF (baud derived from version)"),
+        DeclareLaunchArgument("laser_tf_z", default_value="0.18",
+                              description="base_laser height above base_link [m]"),
         DeclareLaunchArgument("hector_params",
                               default_value=os.path.join(bringup_share, "config", "hector_slam.yaml")),
         DeclareLaunchArgument("enable_imu", default_value="false",
@@ -64,13 +68,29 @@ def generate_launch_description():
     )
 
     # --- lidar: scan + base_link->base_laser static TF --------------------------
-    lidar = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(lidar_share, "launch", "ld19.launch.py")),
-        launch_arguments={
-            "port_name": LaunchConfiguration("lidar_port"),
-            "product_name": LaunchConfiguration("lidar_product"),
-            "serial_baudrate": LaunchConfiguration("lidar_baudrate"),
-        }.items(),
+    lidar = Node(
+        package="coin_d4_driver",
+        executable="single_coin_d4_node",
+        name="lidar_node",
+        output="screen",
+        parameters=[
+            os.path.join(lidar_share, "params", "single_lidar_node.yaml"),
+            {
+                "port": LaunchConfiguration("lidar_port"),
+                "version": ParameterValue(LaunchConfiguration("lidar_version"), value_type=int),
+                "frame_id": "base_laser",  # keep hector/nav2 sensor_frame consistent
+            },
+        ],
+        condition=IfCondition(LaunchConfiguration("enable_lidar")),
+    )
+    laser_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="base_link_to_base_laser",
+        arguments=[
+            "--x", "0", "--y", "0", "--z", LaunchConfiguration("laser_tf_z"),
+            "--frame-id", "base_link", "--child-frame-id", "base_laser",
+        ],
         condition=IfCondition(LaunchConfiguration("enable_lidar")),
     )
 
@@ -100,7 +120,7 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("enable_slam")),
     )
 
-    components = [motor, lidar]
+    components = [motor, lidar, laser_tf]
     if imu_share:
         components.append(imu)
     else:

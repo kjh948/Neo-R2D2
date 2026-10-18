@@ -30,7 +30,7 @@ from nav2_common.launch import RewrittenYaml
 def generate_launch_description():
     nav_share = get_package_share_directory("r2d2_navigation")
     motor_share = get_package_share_directory("r2d2_motor")
-    lidar_share = get_package_share_directory("ldlidar_ros2")
+    lidar_share = get_package_share_directory("coin_d4_driver")
 
     default_map = os.path.join(nav_share, "maps", "placeholder.yaml")
 
@@ -59,9 +59,27 @@ def generate_launch_description():
         }.items(),
     )
 
-    lidar = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(lidar_share, "launch", "ld19.launch.py")),
-        launch_arguments={"port_name": LaunchConfiguration("lidar_port")}.items(),
+    # coin_d4_driver publishes no TF; the base_link->base_laser static TF is ours.
+    lidar = Node(
+        package="coin_d4_driver",
+        executable="single_coin_d4_node",
+        name="lidar_node",
+        output="screen",
+        parameters=[
+            os.path.join(lidar_share, "params", "single_lidar_node.yaml"),
+            {
+                "port": LaunchConfiguration("lidar_port"),
+                "frame_id": "base_laser",  # matches nav2_params sensor_frame / hector
+            },
+        ],
+        condition=IfCondition(LaunchConfiguration("enable_lidar")),
+    )
+    laser_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="base_link_to_base_laser",
+        arguments=["--x", "0", "--y", "0", "--z", "0.18",
+                   "--frame-id", "base_link", "--child-frame-id", "base_laser"],
         condition=IfCondition(LaunchConfiguration("enable_lidar")),
     )
 
@@ -143,7 +161,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription(args + [
-        motor, lidar, hector, map_server,
+        motor, lidar, laser_tf, hector, map_server,
         planner, controller, smoother, behavior_server, bt_navigator,
         velocity_smoother, lifecycle_manager,
     ])
