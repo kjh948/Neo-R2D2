@@ -10,7 +10,7 @@ Visualization Manager:
       Name: Grid
       Enabled: true
     - Class: rviz_default_plugins/Map
-      Name: SLAM Map (hector)
+      Name: SLAM Map (slam_toolbox)
       Topic:
         Value: /map
         Reliability Policy: Reliable
@@ -39,6 +39,10 @@ Visualization Manager:
       Enabled: false
   Tools:
     - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Value: /initialpose
+        Reliability Policy: Reliable
     - Class: rviz_default_plugins/Measure
       Line color: 128; 128; 0
     - Class: rviz_default_plugins/PublishPoint

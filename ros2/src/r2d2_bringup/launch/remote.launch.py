@@ -12,7 +12,7 @@ Run this on the remote PC (not the Pi). The robot side runs:
 Requirements on the remote PC: ROS 2 Jazzy desktop (rviz2) and the same
 ROS_DOMAIN_ID as the robot — see ros2/README.md §7. This launch itself only
 starts rviz2, so the remote does NOT need the Pi-only drivers (coin_d4_driver,
-hector_slam, ...) built; installing just this workspace's r2d2_bringup package
+rf2o, slam_toolbox, ...) built; installing just this workspace's r2d2_bringup package
 (ament_python, no deps at build time) is enough to get the launch + configs.
 """
 import os

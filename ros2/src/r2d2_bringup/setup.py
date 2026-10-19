@@ -19,7 +19,7 @@ setup(
     zip_safe=True,
     maintainer="kjh948",
     maintainer_email="kjh948@example.com",
-    description="Bringup launch for Neo-R2D2: motor node, LDROBOT lidar, hector SLAM.",
+    description="Bringup launch for Neo-R2D2: motor node, COIN lidar, rf2o odometry + slam_toolbox.",
     license="MIT",
     entry_points={},
 )

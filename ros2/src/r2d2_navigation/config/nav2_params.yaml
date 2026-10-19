@@ -5,9 +5,11 @@
 #    (v, omega): angle 0/180 = forward/reverse, ±90 = in-place rotation,
 #    between = turning arcs. The robot is therefore a standard differential
 #    base and nav2 runs with its usual diff-drive assumptions.
-#  * NO wheel odometry: hector_mapping provides map->base_link TF by scan
-#    matching, and is re-localized via /initialpose (RViz 2D Pose Estimate).
-#    AMCL is intentionally absent (nothing feeds odom->base_link).
+#  * NO wheel odometry: rf2o_laser_odometry publishes /odom + odom->base_link
+#    TF from scan-to-scan matching; slam_toolbox (localization mode, posegraph
+#    from save_map.sh) owns map->odom and /map. Re-localization: RViz 2D Pose
+#    Estimate -> /initialpose (slam_toolbox native). AMCL/map_server absent —
+#    slam_toolbox replaces both.
 #  * r2d2_motor mapping_mode:=tank applies the SE-q18048 IK re-expressed in
 #    normalized polar form (units folded into max_linear/max_angular).
 #  * velocity_smoother enforces accel limits and feeds r2d2_motor (cmd_vel),
@@ -74,6 +76,10 @@ controller_server:
       prune_distance: 1.5
       transform_tolerance: 0.2
       trajectory_visualization: true
+      # state read from TF (use_odometry stays default false) — odom frame now
+      # exists via rf2o, so map->odom->base_link resolves as nav2 expects.
+      odom_frame: odom
+      odometry_topic: /odom
       # default critic set (Constraint/Obstacles/Goal/GoalAngle/PathAlign/
       # PathFollow/PathAngle/PreferForward/Twirling) — all valid now that the
       # robot can rotate; tune weights on hardware if behaviour looks jumpy.
@@ -94,7 +100,7 @@ behavior_server:
       plugin: "nav2_behaviors::DriveOnHeading"
     wait:
       plugin: "nav2_behaviors::Wait"
-    local_frame: map
+    local_frame: odom          # real odom TF exists now (rf2o) — was map in the hector era
     global_frame: map
     robot_base_frame: base_link
     transform_tolerance: 0.5
@@ -149,7 +155,7 @@ velocity_smoother:
     min_velocity: [-0.15, 0.0, -0.8]
     max_accel: [0.5, 0.0, 1.0]
     max_decel: [-0.5, 0.0, -1.0]
-    odom_topic: ""
+    odom_topic: /odom          # rf2o now feeds it (was "" — no odom existed in the hector era)
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.0
@@ -191,7 +197,8 @@ local_costmap:
     ros__parameters:
       update_freq: 5
       footprint: "[[0.2, 0.2], [0.2, -0.2], [-0.2, -0.2], [-0.2, 0.2]]"
-      global_frame: map
+      global_frame: odom       # rolling-window local map follows rf2o odom now (was map: no odom existed)
+      odom_frame: odom
       robot_base_frame: base_link
       width: 4
       height: 4
@@ -217,9 +224,3 @@ local_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         inflation_radius: 0.45
         cost_scaling_factor: 5.0
-
-map_server:
-  ros__parameters:
-    # yaml_filename is set by navigation.launch.py (map:= argument)
-    topic_name: map
-    must_subscribe: False

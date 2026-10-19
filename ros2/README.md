@@ -1,7 +1,7 @@
 # ros2 — Neo-R2D2 ROS 2 워크스페이스 (Jazzy)
 
 ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
-`/cmd_vel`(Twist) → MCU 모터 제어, COIN-D3 LiDAR, hector SLAM, MPU6050 IMU,
+`/cmd_vel`(Twist) → MCU 모터 제어, COIN-D3 LiDAR, rf2o 레이저 오도메트리 + slam_toolbox, MPU6050 IMU,
 그리고 nav2 내비게이션까지 한 번에 올립니다.
 
 ```
@@ -13,10 +13,12 @@ ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
                     ┌──────────────┐   /dev/ttyAMA1
  COIN-D3 ──────────▶│coin_d4_driver│──▶ /scan
                     └────────────┘        │
-                    ┌────────────┐        ▼
-                    │ hector_    │──▶ /map, TF: map → base_link
-                    │ mapping    │
-                    └────────────┘
+                    ┌─────────────┐        ▼
+                    │ rf2o_laser_ │──▶ /odom, TF: odom → base_link
+                    │ odometry    │
+                    ├─────────────┤
+                    │ slam_toolbox│──▶ /map, TF: map → odom
+                    └─────────────┘
                     ┌────────────┐   /dev/i2c-<bus>
  MPU6050 ──────────▶│ mpu6050drv │──▶ /imu (sensor_msgs/Imu)
                     └────────────┘
@@ -29,7 +31,7 @@ ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
 | `src/r2d2_motor/` | 직접 개발 (ament_python) | Twist → MCU `move` 프레임 변환 노드 |
 | `src/r2d2_bringup/` | 직접 개발 (ament_python) | motor + lidar + slam + imu 통합 launch |
 | `src/coin_d4_driver/` | 외부 클론 | ROBOTIS LiDAR 드라이버 (COIN-D3/D4, LDS-02/03 계열) |
-| `src/hector_slam_humble/` | 외부 클론 | hector SLAM (15개 패키지) |
+| `src/rf2o_laser_odometry/` | 외부 클론 (vendoring) | scan-to-scan 레이저 오도메트리 (`/odom` + odom→base_link TF). slam_toolbox는 apt(`ros-jazzy-slam-toolbox`) |
 | `src/ros2_mpu6050/` | 외부 클론 | MPU6050 I2C IMU 드라이버 + calibrate 유틸 (Pi5/Jazzy 패치) |
 | `src/r2d2_navigation/` | 직접 개발 (ament_cmake) | Nav2 내비게이션 스택 + 지도 저장 스크립트 (§6) |
 
@@ -73,8 +75,10 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
 
 `max_linear_velocity`(0.5 m/s), `max_angular_velocity`(1.0 rad/s),
 `cmd_vel_timeout`(0.5 s), `repeat_period`(0.3 s), `gin_period`(5 s),
-`deadband`(0.02), `min_power`(1), `invert_strafe`, `serial_port`, `baudrate`,
+`deadband`(0.02), `min_power`(1), `serial_port`, `baudrate`,
 `config_file`, `mock`, `cmd_vel_topic`
+- `invert_strafe`는 **기본 true** (2026-10-18 실물 확인: +angular.z에 로봇이 우회전 →
+  MCU 각도 부호가 ROS 컨벤션과 반대라 wz를 반전). 정방향 장착/퍼밍 변경 시 `false`
 
 ## 2. LiDAR — `coin_d4_driver`
 
@@ -83,34 +87,51 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
   3=M1CT_Coin_Plus(115200), 4=M1CT_TOF(230400) — baudrate는 version이 결정( yaml값 덮어씀).
   **우리 장비: COIN-D3 (`params/single_lidar_node.yaml` 기준 version 4, `/dev/ttyAMA1`)**
 - 출력: `/scan`. 노드 이름은 `lidar_node`(하드코딩). **드라이버는 TF를 발행하지 않음** —
-  `base_link→base_laser` static TF(z=0.18)와 frame_id `base_laser` 오버라이드는
-  `r2d2_bringup`/`r2d2_navigation` launch에서 담당 (hector·nav2가 `base_laser` 사용)
+  `base_link→base_laser` static TF(z=0.18, **roll=π**)와 frame_id `base_laser` 오버라이드는
+  `r2d2_bringup`/`r2d2_navigation` launch에서 담당 (slam_toolbox·rf2o·nav2가 `base_laser` 사용)
+- 실물 장착: COIN-D4가 **거꾸로(윗면이 아래)** 달려 있어 static TF에 roll=π를 넣음
+  (RViz에서 좌우 반전 보상의 근거. 바르게 재장착하면 `laser_tf_roll:=0`)
 - 단독 구동: `ros2 launch coin_d4_driver single_lidar_node.launch.py`
   (param 파일 갈아끼우기: `single_lidar_node_param:=...`)
 - ⚠️ 이전에 쓰던 `ldlidar_ros2`(LD19) 패키지는 삭제됨 (2026-10, COIN-D3 교체)
 - ✅ 실물 동작 확인됨 (COIN-D3, `/dev/ttyAMA1` — 운영자 검증)
 
-## 3. SLAM — `hector_slam`
+## 3. SLAM — `rf2o_laser_odometry` + `slam_toolbox`
 
-- 출처: `https://github.com/KiiiLin/hector_slam_humble` (Humble용, 15개 패키지).
-  폴더명은 Jazzy 구동에 맞춰 `src/hector_slam`으로 rename했고, 내부 15개 패키지의
-  이름(`hector_mapping` 등)은 원본 그대로.
-- Jazzy适配: `hector_compressed_map_transport/src/map_to_image_node.cpp`의
-  `#include <cv_bridge/cv_bridge.h>` → `<cv_bridge/cv_bridge.hpp>` (Jazzy에서 .h 제거됨).
-  나머지 패키지는 무수정 빌드
-- `hector_slam_launch`의 예제 launch들은 원작자 로봇용(`laser`, `nav` 등 frame)이라
-  **Neo-R2D2에서는 `r2d2_bringup`의 yaml을 사용**
-- 구성 (scan-only SLAM, `r2d2_bringup/config/hector_slam.yaml`):
-  - `map_frame=map`, `odom_frame=base_link`, `base_frame=base_link` —
-    wheel odom이 없어 hector가 `map→base_link`를 직접 발행
-  - COIN-D3 한계 반영: `laser_min_dist=0.05`, `laser_max_dist=12.0`
-  - 느린 보행에 맞춘 갱신 임계값: `map_update_distance_thresh=0.2`,
-    `map_update_angle_thresh=0.15`, `map_resolution=0.05`, `map_size=600`(30m×30m)
+> 2026-10-19: hector_slam 전면 교체. wheel odom이 없는 로봇에 scan 기반
+> 오도메트리(rf2o)를 더한 **표준 nav2 TF 체인**(map→odom→base_link) 구성.
+> hector_slam(vendored 15개 패키지)·`hector_slam.yaml`·`hector_nav.yaml`·
+> `map_server`(placeholder 지도)는 삭제됨.
+
+* **rf2o_laser_odometry** — `/scan` 연속 스캔 매칭으로 `odom→base_link` TF + `/odom` 발행
+  - 출처: `https://github.com/MAPIRlab/rf2o_laser_odometry` (`ros2` 브랜치) vendoring
+  - 로컬 패치: `package.xml` — 포닥-era 유물 삭제: `cmake_modules` build/run_depend
+    제거(CMakeLists는 미사용 실측 확인), `<run_depend>` → `<exec_depend>`, `nav_msgs` 누락 보완.
+    소스 코드 무수정 빌드(Jazzy/GCC13 arm64)
+  - 파라미터는 launch에 dict로 직접 주입 (`r2d2_bringup`/`r2d2_navigation`):
+    `odom_topic: /odom` (upstream 기본 `/odom_rf2o`), `init_pose_from_topic: ""`
+    (upstream 기본이 `/base_pose_ground_truth` — 반드시 비워야 함), `freq: 20`
+    (실측은 스캔 수신률 ≈10Hz로 출력)
+* **slam_toolbox** — apt `ros-jazzy-slam-toolbox` (2.8.5, 설치 확인)
+  - 매핑(bringup): `async_slam_toolbox_node`, `r2d2_bringup/config/slam_toolbox.yaml`
+    (`/opt/ros`의 `mapper_params_online_async.yaml` 기반. `base_frame: base_link` —
+    템플릿 기본 `base_footprint`는 이 로봇에 없음, resolution 0.05,
+    laser 0.05–12m, slow-walker `minimum_travel_*` 0.2/0.15 계승)
+  - 내비(navigation): `localization_slam_toolbox_node`,
+    `r2d2_navigation/config/slam_toolbox_localization.yaml` — `map_file_name`은
+    launch의 `posegraph:=` 인자가 RewrittenYaml로 주입
+  - ⚠️ 실측 함정 두 개 (2026-10-19, jazzy 2.8.5):
+    1) localization 모드에서 `map_start_at_dock` **미지원** — dock 설정 시 SIGSEGV.
+       `map_start_pose: [0,0,0]` 필수 (yaml에 반영됨)
+    2) **움직임 없이 만든 단일 노드 포즈그래그를 deserialize하면 SIGSEGV**
+       (`loadSerializedPoseGraph`, async/localization 공통). 매핑 세션에서는 반드시
+       0.5m 이상 주행 후 저장할 것 — 정지 상태로 `save_map.sh` 실행하면 그 파일 로드 불가
+  - 노드명은 기본값 `slam_toolbox` 유지 (서비스 스페이스 `/slam_toolbox/*` 관례)
 
 ### TF 트리 (구동 시)
 
 ```
-map ──(hector)──▶ base_link ──(bringup static TF, z=0.18)──▶ base_laser
+map ──(slam_toolbox)──▶ odom ──(rf2o)──▶ base_link ──(bringup static TF, z=0.18, roll=π: 뒤집힘 장착 보정)──▶ base_laser
 ```
 
 ## 4. IMU — `ros2_mpu6050` (kimsniper)
@@ -142,15 +163,14 @@ map ──(hector)──▶ base_link ──(bringup static TF, z=0.18)──▶
 - 센서 미연결 시 동작(확인됨): `/dev/i2c-1` open은 성공 → device ID 검증 실패로
   `MPU6050 initialization failed!` 출력 후 프로세스는 살아있음. 연결 후 정상화
 - **imu_filter_madgwick 검토 결론: 현 구성에서는 불필요 (보류)**
-  - hector SLAM은 `/scan`만 사용 — IMU 불필요
-  - `hector_imu_attitude_to_tf`는 `imu.orientation`(quaternion)을 그대로
-    소비하는데 이 드라이버는 orientation을 발행하지 않음 → attitude TF를
-    원할 때만필요
+  - SLAM(rf2o + slam_toolbox)은 `/scan`만 사용 — IMU 불필요
+  - (hector 시절의 `hector_imu_attitude_to_tf` 연동은 hector 제거로 소멸.
+    이 드라이버는 orientation을 발행하지 않으므로 attitude TF가 필요해지면
+    별도 publisher를 붙여야 함)
   - 필요해지는 시점(기울임 감시 / robot_localization EKF 등):
     `sudo apt install ros-jazzy-imu-filter-madgwick` 후
-    `/imu/mpu6050` → `imu_filter_madgwick` → orientation 있는 `imu/data` →
-    `hector_imu_attitude_to_tf` 순으로 연결. MAG 없는 MPU6050 특성상
-    yaw는 드리프트 (roll/pitch는 accel 보정되어 실용적)
+    `/imu/mpu6050` → `imu_filter_madgwick` → orientation 있는 `imu/data` 순으로
+    연결. MAG 없는 MPU6050 특성상 yaw는 드리프트 (roll/pitch는 accel 보정되어 실용적)
 - ⚠️ **빌드·launch 검증 완료 / MPU6050 본체 미연결 — 실물 테스트 남아있음**
 
 ## 5. 통합 — `r2d2_bringup`
@@ -164,21 +184,22 @@ ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=true imu_device:=/de
 
 인자: `enable_motor`/`enable_lidar`/`enable_slam`/`enable_imu`, `mock`,
 `lidar_port`(ttyAMA1), `lidar_version`(coin_d4_driver protocol), `laser_tf_z`(0.18),
-`hector_params`(yaml 경로), `imu_device`(/dev/i2c-1), `imu_frame`(base_link)
+`laser_tf_roll`(π — 라이다 뒤집힘 장착 보정), `rf2o_freq`(20.0),
+`slam_params`(yaml 경로), `imu_device`(/dev/i2c-1), `imu_frame`(base_link)
 
 ## 6. 내비게이션 — `r2d2_navigation`
 
-linorobot2_navigation 구조(launch/config/maps/rviz)를 참고하되, **차동 + no-odometry**
-사양에 맞춰 재설계했습니다.
+linorobot2_navigation 구조(launch/config/maps/rviz)를 참고하되, **차동 + 레이저
+오도메트리(rf2o)** 사양에 맞춰 재설계했습니다.
 
 ```
 r2d2_navigation/
-├── config/nav2_params.yaml      # nav2 1.3.13 검증 완료
-├── config/hector_nav.yaml       # 내비 모드 hector (지도 원점 분리)
-├── launch/navigation.launch.py  # motor+lidar+hector+map_server+nav2 core
-├── maps/placeholder.{pgm,yaml}  # 10×10m 방 (임시, 실측 지도로 교체)
+├── config/nav2_params.yaml             # nav2 1.3.13 — odom 프레임 반영 (rf2o 이후)
+├── config/slam_toolbox_localization.yaml  # localization 모드 (posegraph 로드)
+├── launch/navigation.launch.py         # motor+lidar+rf2o+slam_toolbox(loc)+nav2 core
+├── maps/                               # save_map.sh 출력 (posegraph+pgm/yaml, git 추적)
 ├── rviz/nav2_config.rviz
-└── scripts/save_map.sh          # /live_map → nav2 지도 저장
+└── scripts/save_map.sh                 # serialize_map + map_saver_cli
 ```
 
 ### 구동/추정 아키텍처 (핵심 결정)
@@ -188,46 +209,51 @@ r2d2_navigation/
 | 모션 | `r2d2_motor mapping_mode:=tank` | MCU (power, angle) = (v, ω) 극좌표 (운영자 확인, SE q18048) |
 | 컨트롤러 | MPPI `motion_model: DiffDrive` (wz_max 0.8) | 기본 critics 전체 유효 (회전 가능) |
 | 플래너 | NavFn | diff 로봇 표준, 경로에 heading 포함 |
-| 위치추정 | **hector_mapping 상시 구동** (scan matching → `map→base_link` TF) | wheel odom 없음 → AMCL/odometry 불가. hector의 존재 이유 |
-| 자기위치 보정 | RViz **2D Pose Estimate** → `/initialpose` (hector resetPose, [HectorMappingRos.cpp:670]) | 홈 출발 규칙 불필요. 지도에서 위치 클릭으로 좌표 정렬 |
-| 지도 | `map_server`가 저장 지도 `/map` 발행, hector live map은 `/live_map`으로 remap (frame은 `map` 공유) | costmap 입력과 live 매핑의 토픽 충돌 방지 |
+| 위치추정 | **rf2o(odom→base_link) + slam_toolbox localization(map→odom)** | wheel odom 없음 → scan 기반 레이저 odom. nav2 표준 TF 체인이 완성되어 local costmap(odom)/velocity_smoother(/odom)/MPPI가 정상 동작 |
+| 자기위치 보정 | RViz **2D Pose Estimate** → `/initialpose` (slam_toolbox 네이티브) | 출발 기본값 `map_start_pose: [0,0,0]` (매핑 시작 지점), 어딘가에 출발하면 클릭으로 보정 |
+| 지도 | slam_toolbox가 posegraph 로드 후 `/map` 직접 발행 (map_server 폐지) | 저장: `save_map.sh` → `_posegraph.{posegraph,data}` + `.pgm/.yaml` |
 | goal checker | xy 0.15 / **yaw 0.25** (회전 유효) | — |
 | BT | nav2 기본 recovery tree (**Spin 포함** 가능) | 커스텀 no-spin 트리 폐기됨 |
 
-### 지도 워크플로 (hector → nav2)
+### 지도 워크플로 (slam_toolbox)
 
 ```bash
-# 1) 매핑: Pi에서 bringup으로 hector SLAM 구동, 원격 PC의 RViz로 확인하며 주행 (§7)
+# 1) 매핑: Pi에서 bringup(async slam_toolbox) 구동, 원격 PC RViz로 확인하며 **주행** (§7)
+#    ⚠️ 정지 상태 매핑은 1-노드 포즈그래그를 만드는데, 이 slam_toolbox(2.8.5)는
+#    그 파일 로드 시 SIGSEGV — 반드시 0.5m 이상 움직인 뒤 저장할 것 (§3 참조)
 ros2 launch r2d2_bringup r2d2_bringup.launch.py            # Pi
 ros2 launch r2d2_bringup remote.launch.py                   # 원격 PC (rviz_slam.rviz)
 
-# 2) 저장: bringup 세션은 /map 기본값 그대로
-ros2 run r2d2_navigation save_map.sh maps/r2d2_home         # Pi 또는 원격(어디서든)
-#    navigation 세션(실시간지도가 /live_map으로 remap됨)일 때:
-MAP_TOPIC=live_map ros2 run r2d2_navigation save_map.sh maps/r2d2_home
+# 2) 저장: posegraph(내비용) + pgm/yaml(열람용) 동시 출력 — save_map.sh 헤더 주석 참고
+ros2 run r2d2_navigation save_map.sh                        # → maps/r2d2_home_posegraph.* + r2d2_home.*
+#           커스텀 경로: save_map.sh /tmp/room 등. 저장 후 install 사본 갱신:
+colcon build --packages-select r2d2_navigation
 
-# 3) 내비: 저장 지도 사용 + hector가 실시간 자기위치 추정
-ros2 launch r2d2_navigation navigation.launch.py map:=<절대경로>/r2d2_home.yaml
+# 3) 내비: posegraph 로드 + localization(자기위치) + nav2 core
+ros2 launch r2d2_navigation navigation.launch.py \
+    posegraph:=$(ros2 pkg prefix r2d2_navigation)/share/r2d2_navigation/maps/r2d2_home_posegraph
 #    원격 RViz: ros2 launch r2d2_bringup remote.launch.py \
 #        rviz_config:=$(ros2 pkg prefix r2d2_navigation)/share/r2d2_navigation/rviz/nav2_config.rviz
 #    ① 2D Pose Estimate로 실제 위치 지정 → ② 2D Goal Pose로 목표 발행
 ```
 
-`maps/placeholder.*`는 센서 미연결 단계에서 nav2 스택 전체 기동을 검증용으로
-커밋된 더미 지도입니다. 실측 지도가 있으면 `map:=`로 교체.
+(구 `maps/placeholder.*` + map_server 방식은 hector 제거와 함께 폐지 — navigation의
+지도 입력은 posegraph 전용. headless 스택 검증에는 `posegraph:=`에 실제 지도 필요)
 
 ### 검증 상태 (nav2)
 - 1.3.13 파라미터 실측 통과: SmacPlanner→NavFn 교체, MPPI DiffDrive,
-  NavigateToPoseNavigator, behavior spin복원, 전 서버 configure (headless,
-  mock+hector-off에서 map TF 대기 로그만 정상 출력)
-- ⬜ 실물 e2e (LiDAR/IMU/MCU 연결 후): `/scan`→hector→costmap→경로추종
+  NavigateToPoseNavigator, behavior spin복원, 전 서버 configure (headless)
+- ✅ 2026-10-19 (rf2o+toolbox 전환): LiDAR+모의 원운동 odom TF로 매핑→serialize→
+  navigation localization 로드까지 headless e2e 통과 — `/odom` ~10Hz,
+  `map→base_link` TF, `/map`(123×102 grid) 발행
+- ⬜ 실물 e2e (MCU 연결 후): 주행 매핑→/odom 품질→costmap→경로추종
 
-## 7. 원격 PC 세팅 (RViz — hector 매핑/내비 모니터링)
+## 7. 원격 PC 세팅 (RViz — slam_toolbox 매핑/내비 모니터링)
 
 Pi에는 디스플레이가 없으므로 `/map` 시각화·지도 저장·2D Pose Estimate는 원격 PC의
 RViz 2가 담당한다. **원격 PC는 노드를 직접 실행하지 않는다** — 같은 DDS 도메인으로
-Pi의 토픽/TF를 구독만 하면 되므로 드라이버(coin_d4_driver, hector_slam, motor)를
-원격에 빌드할 필요가 없다.
+Pi의 토픽/TF를 구독만 하면 되므로 노드(coin_d4_driver, rf2o, slam_toolbox, motor)를
+원격에 빌드·실행할 필요가 없다.
 
 ### 1) ROS 2 설치 (Ubuntu 24.04 — Jazzy가 Pi와 동일)
 
@@ -285,9 +311,27 @@ export CYCLONEDDS_URI='<CycloneDDS><Domain><General><AllowMulticast>false</Allow
 ### 4) 원격 PC에서의 everyday 사용 흐름
 
 - **매핑**: §6 워크플로 1)처럼 Pi bringup + 원격 `remote.launch.py` → map/scan/TF 확인
-- **지도 저장**: 원격에서 `MAP_TOPIC=map ros2 run r2d2_navigation save_map.sh ...`
-  (map_saver는 토픽 구독만 하면 되므로 어느 머신에서 실행하든 관계없다)
+- **지도 저장**: 매핑 세션(Pi)에서 `ros2 run r2d2_navigation save_map.sh` —
+  serialize_map은 Pi의 slam_toolbox 서비스 호출이라 **Pi에서 실행**해야 한다
+  (pgm/yaml 부분만 원격 실행 가능). 출력 `_posegraph.{posegraph,data}` + `.pgm/.yaml`은
+  git 추적 위치 `src/r2d2_navigation/maps/`에 저장 — 원격에서 저장했다면 Pi의 같은
+  디렉터리로 복사(rsync/git) 후 Pi에서 `colcon build --packages-select r2d2_navigation`
 - **내비**: `remote.launch.py rviz_config:=…/nav2_config.rviz` → 2D Pose Estimate/Goal 사용
+
+#### 트러블슈팅 — RViz에 "이전 맵"이 남는 경우 (2026-10-18 실증)
+
+세션 지도는 메모리에 있고(슬램 자체는 디스크 영속성 없음 — 지도를 떠나는 건
+serialize 뿐), 그런데도 이전 세션 지도가 뜨는 원인은 둘뿐:
+
+1. **이전 bringup/nav 세션이 안 죽고 좀비로 살아있음** — 중복 `slam_toolbox`가
+   자기 `/map`(TRANSIENT_LOCAL 래치)을 계속 뿌려 RViz에 이전/신규 지도가 섞이고,
+   `lidar_node` 둘이 `/dev/ttyAMA1`을 잡아먹는다. Ctrl+C를連打하면 launch가
+   자식을 SIGKILL까지 못 끝낸 이력이 있으므로 확인:
+   `pgrep -af "slam_toolbox|rf2o_laser_odometry|single_coin_d4|motor_node|static_transform_publisher"`
+   → bringup/navigation launch가 **기동 앞에 중복 노드를 감지하면 아예 중단**하도록
+   가드를 넣었다 (`_guard_against_stale_session`)
+2. **RViz의 Map 디스플레이는 타임아웃이 없어** 퍼블리셔가 사라져도 마지막 래치
+   지도를 계속 보여준다 → RViz 재시작(또는 display 껐다 켜기)이 필요
 
 ## 빌드
 
@@ -295,9 +339,11 @@ export CYCLONEDDS_URI='<CycloneDDS><Domain><General><AllowMulticast>false</Allow
 cd ~/workspace/Neo-R2D2/ros2
 source /opt/ros/jazzy/setup.bash
 git clone -b jazzy https://github.com/ROBOTIS-GIT/coin_d4_driver.git src/coin_d4_driver   # 최초 1회
-git clone https://github.com/KiiiLin/hector_slam_humble.git src/hector_slam        # 최초 1회
+git clone -b ros2 https://github.com/MAPIRlab/rf2o_laser_odometry.git src/rf2o_laser_odometry  # 최초 1회
+#   ※ 클론 후: rm -rf src/rf2o_laser_odometry/.git + package.xml 패치(§3 — 이미 반영됨)
 git clone https://github.com/kimsniper/ros2_mpu6050.git src/ros2_mpu6050  # 최초 1회
 sudo apt install libi2c-dev i2c-tools                     # IMU 드라이버에 필요 (설치 완료)
+sudo apt install ros-jazzy-slam-toolbox                   # SLAM (설치 완료: 2.8.5)
 colcon build                    # python은 --symlink-install 권장
 source install/setup.bash
 ```
@@ -310,9 +356,9 @@ source install/setup.bash
 | motor 노드 mock 스모크 | ✅ ready/gin/0.3→`power60 angle0` 300ms 반복/타임아웃 정지 확인 |
 | config 반영(ttyAMA0) | ✅ `config_local.json` 자동 로드, 파라미터 오버라이드 확인 |
 | 전체 패키지 빌드 | ✅ 0 failures (Pi5, Jazzy, nav2 1.3.13) |
-| bringup 기동 | ✅ motor(mock)+hector 파라미터 반영 확인 (LiDAR 제외) |
-| nav2 스택 headless 검증 | ✅ map_server/NavFn/MPPI-DiffDrive/BT(기본 트리)/behavior/velocity_smoother 전 서버 configure (mock, hector-off — TF 대기 로그만) |
-| nav2 실물 e2e | ⬜ LiDAR+MCU 연결 후 (§6 검증 상태) |
+| bringup 기동 | ✅ motor(mock)+LiDAR+rf2o+slam_toolbox — `/odom` 10Hz, `/map`+TF 체인 실동작 (2026-10-19, hector 제거 후) |
+| nav2 스택 headless 검증 | ✅ NavFn/MPPI-DiffDrive/BT(기본 트리)/behavior/velocity_smoother 전 서버 configure (mock). localization 로드 e2e: posegraph→`map→base_link` TF 확인 |
+| nav2 실물 e2e | ⬜ MCU 연결 후 주행 (§6 검증 상태) |
 | LiDAR 실물 (COIN-D3) | ✅ coin_d4_driver 스캔 수신 확인 (/dev/ttyAMA1) |
 | MCU 실물 UART | ⬜ 미검증 |
 | ros2_mpu6050 빌드/launch | ✅ 패치 후 빌드 통과, launch/param 검증, 미연결 시 "initialization failed" 안내 확인 |
@@ -327,7 +373,8 @@ source install/setup.bash
 3. 속도 체감 보고 `max_linear_velocity` 조정 (power 스케일)
 4. LiDAR: `/dev/ttyAMA1` 없으면 Pi UART 오버레이(`config.txt`의 `enable_uart`/
    `dtoverlay=uart1`) 확인, `ros2 topic echo /scan --once`로 데이터 수신 확인
-5. SLAM: rviz2(원격 PC)에서 `/map` + `/scan` + TF 표시
+5. SLAM: rviz2(원격 PC)에서 `/map` + `/scan` + `/odom` + TF 표시
+   (`ros2 topic hz /odom` ≈ 스캔률, `view_frames`로 map→odom→base_link→base_laser 확인)
 6. 충전 독에 물리면 move가 차단되는지 `gin` 응답으로 확인
 7. IMU(MPU6050): VCC→3.3V, GND, SDA/SCL을 쓰는 버스의 GPIO에 (i2c-1 = GPIO2/3),
    AD0는 GND(0x68) 또는 VCC(0x69 — `i2c_address` 파라미터로 지원).
@@ -338,9 +385,10 @@ source install/setup.bash
 
 ## 알려진 사항
 
-- `src/coin_d4_driver`, `src/hector_slam`은 vendoring 완료(네스트 .git 제거,
+- `src/coin_d4_driver`, `src/rf2o_laser_odometry`은 vendoring 완료(네스트 .git 제거,
   본 리포에 커밋됨). `src/ros2_mpu6050`도 커밋 시 `.git` 제거 필요.
-  (구 `src/ldlidar_ros2`는 COIN-D3 교체로 삭제)
+  (구 `src/ldlidar_ros2`는 COIN-D3 교체로, `src/hector_slam`은 rf2o+slam_toolbox
+  교체로 2026-10-19 삭제)
 - `r2d2_link.py`는 `r2d2` 패키지의 벤더본 — 원본 프로토콜 변경 시 동기화 필요
 - `build/`, `install/`, `log/`은 `ros2/.gitignore`로 제외
 

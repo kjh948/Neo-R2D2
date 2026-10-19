@@ -40,7 +40,9 @@ class MotorNode(Node):
         self.declare_parameter("max_angular_velocity", 1.0)
         self.declare_parameter("deadband", 0.02)
         self.declare_parameter("min_power", 1)
-        self.declare_parameter("invert_strafe", False)
+        # True by default: the MCU's polar angle sign is mirrored vs the ROS
+        # twist convention (hardware check 2026-10-18: +wz turned the robot right).
+        self.declare_parameter("invert_strafe", True)
         self.declare_parameter("mapping_mode", "differential")
         self.declare_parameter("cmd_vel_timeout", 0.5)
         self.declare_parameter("repeat_period", 0.3)

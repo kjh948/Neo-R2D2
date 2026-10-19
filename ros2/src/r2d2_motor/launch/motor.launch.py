@@ -35,9 +35,14 @@ def generate_launch_description() -> LaunchDescription:
                               description="Seconds without a Twist before an automatic stop"),
         DeclareLaunchArgument("repeat_period", default_value="0.3",
                               description="Seconds between repeated move frames while driving"),
-        DeclareLaunchArgument("invert_strafe", default_value="false"),
+        DeclareLaunchArgument("invert_strafe", default_value="true",
+                              description="Hardware truth (2026-10-18): +angular.z made the "
+                                          "robot turn RIGHT — the MCU polar angle sign is "
+                                          "mirrored vs the ROS convention, so flip wz by default"),
         DeclareLaunchArgument("mapping_mode", default_value="differential",
-                              description="'differential' (teleop 4-dir) or 'holonomic' (nav2 vx/vy)"),
+                              description="'differential' (teleop 4-dir), 'holonomic' (vx/vy) "
+                                          "or 'tank' (nav2 vx/wz -> MCU polar — what "
+                                          "r2d2_navigation uses)"),
         Node(
             package="r2d2_motor",
             executable="motor_node",

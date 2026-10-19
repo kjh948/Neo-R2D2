@@ -10,22 +10,13 @@ Visualization Manager:
       Name: Grid
       Enabled: true
     - Class: rviz_default_plugins/Map
-      Name: Saved Map (costmap source)
+      Name: Map (slam_toolbox localization)
       Topic:
         Value: /map
         Reliability Policy: Reliable
         Durability Policy: Volatile
       Color Scheme: map
       Enabled: true
-    - Class: rviz_default_plugins/Map
-      Name: Live Map (hector)
-      Topic:
-        Value: /live_map
-        Reliability Policy: Reliable
-        Durability Policy: Volatile
-      Color Scheme: costmap
-      Alpha: 0.5
-      Enabled: false
     - Class: rviz_default_plugins/LaserScan
       Name: LaserScan
       Topic:
