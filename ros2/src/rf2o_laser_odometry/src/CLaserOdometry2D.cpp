@@ -923,6 +923,31 @@ void CLaserOdometry2D::PoseUpdate()
   for (unsigned int i=1; i<=ctf_levels; i++)
     acu_trans = transformations[i-1]*acu_trans;
 
+  // Neo-R2D2 vendoring patch: idle deadband. With the robot standing still
+  // (charging dock), scan-matching noise/vibration integrates into a slow
+  // odom drift visible as base_link sliding in RViz (measured ~5 cm/18 s at a
+  // 1 mm gate). Increments below ~3 mm / ~0.17 deg per scan are
+  // indistinguishable from that noise floor; the slowest real drive, 0.05 m/s,
+  // still moves ~5 mm per scan at 10 Hz and passes — hold the pose and publish
+  // zero velocity instead of accumulating the noise.
+  {
+    const float idle_dx = acu_trans(0, 2);
+    const float idle_dy = acu_trans(1, 2);
+    const float idle_dr = std::atan2(acu_trans(1, 0), acu_trans(0, 0));
+    if (std::hypot(idle_dx, idle_dy) < 0.003f && std::fabs(idle_dr) < 0.003f)
+    {
+      laser_oldpose_ = laser_pose_;
+      robot_oldpose_ = robot_pose_;
+      last_increment_ = Pose3d::Identity();
+      lin_speed  = 0.0;
+      ang_speed  = 0.0;
+      double t = (current_scan_time - last_odom_time).seconds();
+      if (t > 0.0)
+        last_odom_time = current_scan_time;
+      return;
+    }
+  }
+
   //				Compute kai_loc and kai_abs
   //--------------------------------------------------------
   kai_loc_(0) = fps*acu_trans(0,2);

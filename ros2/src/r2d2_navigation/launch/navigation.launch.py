@@ -19,6 +19,7 @@ Architecture (differs from linorobot2 deliberately):
 nav2 core (planner/controller/bt/smoother/lifecycle) starts only when Nav2 is
 installed; enable_nav2:=false brings up just motor + lidar + rf2o + localization.
 """
+import math
 import os
 import subprocess
 
@@ -29,6 +30,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from nav2_common.launch import RewrittenYaml
 
 
@@ -67,6 +69,10 @@ def generate_launch_description():
                               description="motor node mock UART"),
         DeclareLaunchArgument("enable_lidar", default_value="true"),
         DeclareLaunchArgument("lidar_port", default_value="/dev/ttyAMA1"),
+        DeclareLaunchArgument("lidar_reverse", default_value="false",
+                              description="coin_d4_driver scan DATA mirror — false is correct "
+                                          "for the current upside-down mount (true double-"
+                                          "mirrors and reverses rf2o odom; see r2d2_bringup)"),
         DeclareLaunchArgument("enable_slam_loc", default_value="true",
                               description="rf2o odom + slam_toolbox localization (map->odom TF); keep true on hardware"),
         DeclareLaunchArgument("enable_nav2", default_value="true",
@@ -87,9 +93,11 @@ def generate_launch_description():
 
     # coin_d4_driver publishes no TF; the base_link->base_laser static TF is ours.
     # Measured mount (2026-10-24): 18 cm FORWARD of base_link, 8.3 cm high.
-    # The COIN-D3 sits upside down, but the left/right mirror is compensated in
-    # the scan DATA (reverse: true) so base_laser stays PARALLEL to base_link
-    # (identity rotation — same convention as r2d2_bringup).
+    # The COIN-D3 sits upside down, but the driver's angle/range pairing already
+    # cancels the mirror in the scan DATA — keep reverse: false. A second data
+    # mirror (reverse: true) left/right-flipped the scan and made rf2o estimate
+    # REVERSED odometry (hardware-verified 2026-10-24). base_laser stays PARALLEL
+    # to base_link (identity rotation — same convention as r2d2_bringup).
     lidar = Node(
         package="coin_d4_driver",
         executable="single_coin_d4_node",
@@ -100,7 +108,9 @@ def generate_launch_description():
             {
                 "port": LaunchConfiguration("lidar_port"),
                 "frame_id": "base_laser",  # matches nav2_params sensor_frame / rf2o
-                "reverse": True,  # upside-down mount: mirror scan DATA, keep link parallel
+                # false is correct for the current upside-down mount (double mirror
+                # flips rf2o odom direction — see r2d2_bringup lidar node comment)
+                "reverse": ParameterValue(LaunchConfiguration("lidar_reverse"), value_type=bool),
             },
         ],
         condition=IfCondition(LaunchConfiguration("enable_lidar")),
@@ -109,7 +119,10 @@ def generate_launch_description():
         package="tf2_ros",
         executable="static_transform_publisher",
         name="base_link_to_base_laser",
-        arguments=["--x", "0.18", "--y", "0", "--z", "0.083",
+        # --roll pi: physically true for the upside-down mount (pairs with
+        # lidar_reverse:=false; see r2d2_bringup). rf2o only uses the yaw part
+        # of this TF, so odometry direction is unaffected.
+        arguments=["--x", "0.18", "--y", "0", "--z", "0.083", "--roll", str(math.pi),
                    "--frame-id", "base_link", "--child-frame-id", "base_laser"],
         condition=IfCondition(LaunchConfiguration("enable_lidar")),
     )

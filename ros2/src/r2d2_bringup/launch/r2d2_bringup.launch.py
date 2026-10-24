@@ -12,15 +12,17 @@ Components (all individually switchable):
                 must not run). Port/baud come from r2d2/config_local.json.
 * coin_d4_driver — single_coin_d4_node publishes `scan`; the base_link->base_laser
                 static TF is started here (the driver itself publishes no TF).
-                The sensor is mounted upside down: the scan's left/right mirror is
-                compensated in the DATA (`reverse: True`), so base_laser stays
-                PARALLEL to base_link (roll=0 — RViz TF arrows match). Only remount
+                The sensor is mounted upside down, but the driver's angle/range pairing
+                already cancels the mirror in the DATA (reverse stays False) — so
+                base_laser is PARALLEL to base_link (roll=0, RViz TF arrows match) and
+                scans are geometrically correct for rf2o/slam_toolbox. Only remount
                 geometry changes need laser_tf_x/y/z/roll.
 * rf2o_laser_odometry — /scan -> /odom + odom->base_link TF (the robot has no
 *                wheel odometry; this is the only odom source).
 * slam_toolbox — async SLAM, config/slam_toolbox.yaml; owns map->odom.
                 TF chain: map ->(slam_toolbox)-> odom ->(rf2o)-> base_link ->(static)-> base_laser.
 """
+import math
 import os
 import subprocess
 
@@ -81,14 +83,22 @@ def generate_launch_description():
                               description="coin_d4_driver protocol version: "
                                           "1=M1C1_Mini_v1, 2=M1C1_Mini_v2, "
                                           "3=M1CT_Coin_Plus, 4=M1CT_TOF (baud derived from version)"),
+        DeclareLaunchArgument("lidar_reverse", default_value="false",
+                              description="coin_d4_driver scan DATA mirror (see lidar node "
+                                          "comment — false is correct for the current "
+                                          "upside-down mount; true flips rf2o odom direction)"),
         DeclareLaunchArgument("laser_tf_x", default_value="0.18",
                               description="base_laser FORWARD offset from base_link [m] (measured)"),
         DeclareLaunchArgument("laser_tf_z", default_value="0.083",
                               description="base_laser height above base_link [m] (measured 8.3 cm)"),
-        DeclareLaunchArgument("laser_tf_roll", default_value="0",
-                              description="0 = base_laser PARALLEL to base_link (upside-down "
-                                          "mount is compensated via driver reverse:=true); "
-                                          "set pi only if you remove the data mirror instead"),
+        DeclareLaunchArgument("laser_tf_roll", default_value=str(math.pi),
+                              description="pi = the physical truth for the CURRENT upside-down "
+                                          "mount: base_laser Y/Z axes point opposite base_link "
+                                          "(RViz green arrows facing each other is NOT a bug). "
+                                          "Pair with lidar_reverse:=false (mirroring the DATA "
+                                          "too — reverse:=true — flips rf2o odom direction; "
+                                          "verified on hardware 2026-10-24). If the lidar is "
+                                          "ever remounted right-side-up: laser_tf_roll:=0"),
         DeclareLaunchArgument("slam_params",
                               default_value=os.path.join(bringup_share, "config", "slam_toolbox.yaml")),
         DeclareLaunchArgument("rf2o_freq", default_value="20.0",
@@ -120,8 +130,14 @@ def generate_launch_description():
                 "port": LaunchConfiguration("lidar_port"),
                 "version": ParameterValue(LaunchConfiguration("lidar_version"), value_type=int),
                 "frame_id": "base_laser",  # keep slam_toolbox/rf2o/nav2 sensor_frame consistent
-                "reverse": True,  # upside-down mount: mirror the scan DATA here so the
-                                  # base_laser link can stay parallel to base_link
+                # Default false: the driver's parse_lidar_serial_data() already pairs
+                # angle with the reversed sample index, which cancels the upside-down
+                # mount mirror. Setting reverse:=true double-mirrors the scan and made
+                # rf2o estimate REVERSED odometry (hardware-verified 2026-10-24:
+                # forward drive -> odom_x negative while front wall distance shrank).
+                # Use true only if you remount the lidar right-side-up OR pair it with
+                # laser_tf_roll:=pi.
+                "reverse": ParameterValue(LaunchConfiguration("lidar_reverse"), value_type=bool),
             },
         ],
         condition=IfCondition(LaunchConfiguration("enable_lidar")),
