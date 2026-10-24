@@ -79,8 +79,10 @@ def generate_launch_description():
                               description="coin_d4_driver protocol version: "
                                           "1=M1C1_Mini_v1, 2=M1C1_Mini_v2, "
                                           "3=M1CT_Coin_Plus, 4=M1CT_TOF (baud derived from version)"),
-        DeclareLaunchArgument("laser_tf_z", default_value="0.18",
-                              description="base_laser height above base_link [m]"),
+        DeclareLaunchArgument("laser_tf_x", default_value="0.18",
+                              description="base_laser FORWARD offset from base_link [m] (measured)"),
+        DeclareLaunchArgument("laser_tf_z", default_value="0.083",
+                              description="base_laser height above base_link [m] (measured 8.3 cm)"),
         DeclareLaunchArgument("laser_tf_roll", default_value="3.141592653589793",
                               description="COIN-D4 is mounted UPSIDE DOWN (top face down): "
                                           "roll pi flips the scan left/right back into place; "
@@ -125,7 +127,8 @@ def generate_launch_description():
         executable="static_transform_publisher",
         name="base_link_to_base_laser",
         arguments=[
-            "--x", "0", "--y", "0", "--z", LaunchConfiguration("laser_tf_z"),
+            "--x", LaunchConfiguration("laser_tf_x"), "--y", "0",
+            "--z", LaunchConfiguration("laser_tf_z"),
             "--roll", LaunchConfiguration("laser_tf_roll"),
             "--frame-id", "base_link", "--child-frame-id", "base_laser",
         ],

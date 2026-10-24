@@ -87,7 +87,7 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
   3=M1CT_Coin_Plus(115200), 4=M1CT_TOF(230400) — baudrate는 version이 결정( yaml값 덮어씀).
   **우리 장비: COIN-D3 (`params/single_lidar_node.yaml` 기준 version 4, `/dev/ttyAMA1`)**
 - 출력: `/scan`. 노드 이름은 `lidar_node`(하드코딩). **드라이버는 TF를 발행하지 않음** —
-  `base_link→base_laser` static TF(z=0.18, **roll=π**)와 frame_id `base_laser` 오버라이드는
+  `base_link→base_laser` static TF(x=0.18 전방, z=0.083, **roll=π** — 실측 2026-10-24)와 frame_id `base_laser` 오버라이드는
   `r2d2_bringup`/`r2d2_navigation` launch에서 담당 (slam_toolbox·rf2o·nav2가 `base_laser` 사용)
 - 실물 장착: COIN-D4가 **거꾸로(윗면이 아래)** 달려 있어 static TF에 roll=π를 넣음
   (RViz에서 좌우 반전 보상의 근거. 바르게 재장착하면 `laser_tf_roll:=0`)
@@ -131,8 +131,16 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
 ### TF 트리 (구동 시)
 
 ```
-map ──(slam_toolbox)──▶ odom ──(rf2o)──▶ base_link ──(bringup static TF, z=0.18, roll=π: 뒤집힘 장착 보정)──▶ base_laser
+map ──(slam_toolbox)──▶ odom ──(rf2o)──▶ base_link ──(bringup static TF, x=0.18/z=0.083, roll=π: 뒤집힘 장착 보정)──▶ base_laser
 ```
+
+### 기하 실측값 (2026-10-24)
+
+| 항목 | 값 | 반영 위치 |
+|---|---|---|
+| Wheel separation | **23.5 cm** | 차동 운동학 스케일 — nav2 footprint는 바깥Shell 실측 전까지 0.4 m placeholder (≥0.235 guarantee만 코멘트) |
+| LiDAR from base_link | **x = +18 cm (전방), z = 8.3 cm**, roll=π(뒤집힘) | bringup `laser_tf_x/z/roll` 기본값, navigation launch 하드코딩 |
+| base_link 위치 | 차륜 축 중심 가정 | 재정의 시 static TF와 footprint 기준점이 함께 변경됨 |
 
 ## 4. IMU — `ros2_mpu6050` (kimsniper)
 
@@ -183,7 +191,8 @@ ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=true imu_device:=/de
 ```
 
 인자: `enable_motor`/`enable_lidar`/`enable_slam`/`enable_imu`, `mock`,
-`lidar_port`(ttyAMA1), `lidar_version`(coin_d4_driver protocol), `laser_tf_z`(0.18),
+`lidar_port`(ttyAMA1), `lidar_version`(coin_d4_driver protocol),
+`laser_tf_x`(0.18 전방), `laser_tf_z`(0.083 높이),
 `laser_tf_roll`(π — 라이다 뒤집힘 장착 보정), `rf2o_freq`(20.0),
 `slam_params`(yaml 경로), `imu_device`(/dev/i2c-1), `imu_frame`(base_link)
 

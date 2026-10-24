@@ -164,7 +164,7 @@ global_costmap:
   global_costmap:
     ros__parameters:
       update_freq: 2
-      footprint: "[[0.2, 0.2], [0.2, -0.2], [-0.2, -0.2], [-0.2, 0.2]]"   # 0.4 m placeholder — adjust to measured size
+      footprint: "[[0.2, 0.2], [0.2, -0.2], [-0.2, -0.2], [-0.2, 0.2]]"   # 0.4 m placeholder — measured facts: wheel separation 0.235 m (body width >= that, measure shell), lidar at (x=0.18, z=0.083)
       transform_tolerance: 1.0
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       static_layer:
