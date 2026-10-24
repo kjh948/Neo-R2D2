@@ -89,9 +89,16 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
 - 출력: `/scan`. 노드 이름은 `lidar_node`(하드코딩). **드라이버는 TF를 발행하지 않음** —
   `base_link→base_laser` static TF(x=0.18 전방, z=0.083 — 실측 2026-10-24)와 frame_id `base_laser` 오버라이드는
   `r2d2_bringup`/`r2d2_navigation` launch에서 담당 (slam_toolbox·rf2o·nav2가 `base_laser` 사용)
-- 실물 장착: COIN-D3가 **거꾸로(윗면이 아래)** 달려 있어 좌우 미러 보상은 드라이버
-  `reverse: true`(스캔 데이터 반전)로 처리 — base_laser 링크는 base_link와 **평행**
-  (RViz TF 화살표 일치, 2026-10-24 교정). 바르게 재장착하면 `reverse:=false`
+- 실물 장착: COIN-D3가 **거꾸로(윗면이 아래)** — 최종 컨벤션(2026-10-24 하드웨어 교차검증):
+  **`lidar_reverse:=false`(스캔 데이터 미러 안 함) + `base_link→base_laser` TF `roll=π`**
+  (장착의 물리적 사실. RViz에서 base_laser green arrow이 base_link와 마주보는 게 정상,
+  예전에 평행 TF+reverse:true로 바꿨더니 rf2o odom 부호가 반전된 원인이 이것).
+  단 뒤집힌 스캔에서 rf2o가 x축 미러 motion을 내는 업스트림 이슈
+  ([MAPIRlab/rf2o_laser_odometry#20](https://github.com/MAPIRlab/rf2o_laser_odometry/issues/20))
+  가 있어 vendored 소스에서 증분 부호를 보정함(§3). 바르게 재장착하면
+  `laser_tf_roll:=0`으로 되돌리고 §3 부호 보정과 reverse를 재검증할 것.
+- 정지 시 odom 흔들림 실측(데드밴드 적용 후, 독 위 25 s): x 스팬 6.1 mm /
+  y 8.3 mm / yaw 2.85°(진동), 누적 드리프트 ~5 mm — 적용 전 5 cm/18 s 대비 1/10
 - 단독 구동: `ros2 launch coin_d4_driver single_lidar_node.launch.py`
   (param 파일 갈아끼우기: `single_lidar_node_param:=...`)
 - ⚠️ 이전에 쓰던 `ldlidar_ros2`(LD19) 패키지는 삭제됨 (2026-10, COIN-D3 교체)
@@ -108,7 +115,17 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
   - 출처: `https://github.com/MAPIRlab/rf2o_laser_odometry` (`ros2` 브랜치) vendoring
   - 로컬 패치: `package.xml` — 포닥-era 유물 삭제: `cmake_modules` build/run_depend
     제거(CMakeLists는 미사용 실측 확인), `<run_depend>` → `<exec_depend>`, `nav_msgs` 누락 보완.
-    소스 코드 무수정 빌드(Jazzy/GCC13 arm64)
+  - 소스 패치 2건(2026-10-24, `CLaserOdometry2D.cpp` `PoseUpdate`):
+    1) **부호 미러** — 뒤집힌 라이다의 스캔매칭 motion이 x축 미러로 나오는 업스트림
+       이슈(#20 "Pose with wrong direction")를 해당 스레드 해법대로 보정:
+       `pose_aux_2D.translation()(0/1) = -acu_trans(0/1,2)`, `lin_speed = -acu_trans(0,2)/dt`
+       (yaw는 미수정 — 이슈에서 정상 보고, 본 로봇 전진/odom 측정으로 확인).
+       ⚠️ 라이다를 바르게 재장착하면 이 보정을 제거하고 `laser_tf_roll:=0`과 함께 재검증.
+    2) **idle deadband** — 정지(충전 독) 시 노이즈 적산으로 odom이 슬금슬금
+       미끄러지던 것(실측 5 cm/18 s)을 스캔당 증분이 ~3 mm/~0.17° 미만이면
+       포즈 홀드 + 0 속도 발행으로 정지(최저 실주행 0.05 m/s ≈ 스캔당 5 mm는 통과).
+       적용 후 정지 스팬: x 6.1 mm/y 8.3 mm/yaw 2.85°(25 s).
+       검증 유틸: `src/r2d2_bringup/scripts/check_odom.py`(`--scan`이면 벽 섹터 동시)
   - 파라미터는 launch에 dict로 직접 주입 (`r2d2_bringup`/`r2d2_navigation`):
     `odom_topic: /odom` (upstream 기본 `/odom_rf2o`), `init_pose_from_topic: ""`
     (upstream 기본이 `/base_pose_ground_truth` — 반드시 비워야 함), `freq: 20`
@@ -194,7 +211,7 @@ ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=true imu_device:=/de
 인자: `enable_motor`/`enable_lidar`/`enable_slam`/`enable_imu`, `mock`,
 `lidar_port`(ttyAMA1), `lidar_version`(coin_d4_driver protocol),
 `laser_tf_x`(0.18 전방), `laser_tf_z`(0.083 높이),
-`laser_tf_roll`(기본 0 — 미러 보상은 lidar `reverse: true`로, π는 데이터 미러를 풀 때만), `rf2o_freq`(20.0),
+`laser_tf_roll`(기본 π — 뒤집힌 장착의 물리적 TF, §2), `lidar_reverse`(기본 false — 데이터 미러 금지, §2), `rf2o_freq`(20.0),
 `slam_params`(yaml 경로), `imu_device`(/dev/i2c-1), `imu_frame`(base_link)
 
 ## 6. 내비게이션 — `r2d2_navigation`
