@@ -33,6 +33,7 @@ ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
 | `src/coin_d4_driver/` | 외부 클론 | ROBOTIS LiDAR 드라이버 (COIN-D3/D4, LDS-02/03 계열) |
 | `src/rf2o_laser_odometry/` | 외부 클론 (vendoring) | scan-to-scan 레이저 오도메트리 (`/odom` + odom→base_link TF). slam_toolbox는 apt(`ros-jazzy-slam-toolbox`) |
 | `src/ros2_mpu6050/` | 외부 클론 | MPU6050 I2C IMU 드라이버 + calibrate 유틸 (Pi5/Jazzy 패치) |
+| `src/rosboard/` | 외부 클론 (vendoring, .git 제거) | 웹 기반 토픽 시각화 — `ros2 run rosboard rosboard_node` → http://Pi_IP:8888 (deps: python3-tornado apt, simplejpeg pip --user --no-deps, psutil 있음) |
 | `src/r2d2_navigation/` | 직접 개발 (ament_cmake) | Nav2 내비게이션 스택 + 지도 저장 스크립트 (§6) |
 | `src/r2d2_vision/` | 직접 개발 (ament_python) | NCNN YOLO 탐지/추적 노드 (yolo_ros 인터페이스) + YOLOE 클래스 export CLI (§8) |
 | `src/yolo_msgs/` | 외부 클론 (vendoring) | yolo_ros 인터페이스 패키지 (msg/srv) + `SwitchModel.srv` 추가 |
