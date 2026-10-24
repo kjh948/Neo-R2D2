@@ -223,3 +223,5 @@ r2d2/model/vosk-model-small-ko-0.22
 # stray colcon artifacts from building at the repo root (real workspace is ros2/)
 /install/
 /log/
+experimental/pocket-tts/prompt.wav
+experimental/pocket-tts/tts_output.wav
