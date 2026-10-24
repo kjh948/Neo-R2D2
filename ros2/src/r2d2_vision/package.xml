@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>r2d2_vision</name>
+  <version>0.1.0</version>
+  <description>NCNN YOLO detection/tracking node with a yolo_ros-flavored interface
+  (yolo/detections, yolo/tracking, yolo/debug_image, yolo/switch_model). Torch-free
+  runtime; offline YOLOE class-set exports via the vision_export CLI.</description>
+  <maintainer email="kjh948@example.com">kjh948</maintainer>
+  <license>MIT</license>
+
+  <!-- vendored code notes:
+       - r2d2_vision/bytetrack_lite/* : AGPL-3.0 (derived from ultralytics 8.4.182 trackers)
+       - ros2/src/yolo_msgs          : MIT (upstream mgonzs13/yolo_ros interface package) -->
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>yolo_msgs</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>v4l2_camera</exec_depend>
+
+  <!-- pip wheel, NOT apt: /usr/bin/python3 -m pip install --user
+       --break-system-packages --no-deps ncnn==1.0.20260526 (--no-deps is load-bearing) -->
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

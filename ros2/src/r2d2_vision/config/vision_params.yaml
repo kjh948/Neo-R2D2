@@ -1,0 +1,28 @@
+# Example parameter file for r2d2_vision's detection_node (NOT auto-loaded by
+# vision.launch.py — the launch args already cover the common knobs).  To use a
+# YAML wholesale, run the node directly:
+#
+#   ros2 run r2d2_vision detection_node --ros-args --params-file \
+#     $(ros2 pkg prefix r2d2_vision)/share/r2d2_vision/config/vision_params.yaml
+#
+# Section key = /<ns>/<node name> (ns default `yolo`, set at launch).
+/yolo/detection_node:
+  ros__parameters:
+    model_path: /home/kjh948/workspace/yolo/yoloe-26n-det_ncnn_model
+    threshold: 0.4          # detection confidence floor
+    iou: 0.7                # NMS IoU (0.7 = ultralytics predict default merge behaviour)
+    max_fps: 15.0           # inference tick; camera may publish faster (30) — frames drop, never queue
+    use_tracking: true
+    tracker_type: bytetrack # bytetrack | light
+    # class_filter: [person, cup]  # omit the key for "all classes" — Jazzy rcl yaml DROPS
+    # empty `[]` (and the node treats it as unset).  Applied BEFORE the tracker.
+    debug_image: true
+    image_topic: /image_raw
+    image_reliability: 1    # 0 best_effort / 1 reliable / 2 system — MUST match camera publisher
+    ncnn_threads: 2         # Pi5 nano optimum (2 > 4 measured); drop to 1 under nav2 load
+    # ByteTrack knobs (ultralytics bytetrack.yaml defaults; frame_rate/gmc are set by the node)
+    track_high_thresh: 0.25
+    track_low_thresh: 0.1
+    new_track_thresh: 0.25
+    track_buffer: 30        # frames to keep a lost track (= 2 s at 15 Hz)
+    match_thresh: 0.8

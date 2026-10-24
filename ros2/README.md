@@ -34,6 +34,8 @@ ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
 | `src/rf2o_laser_odometry/` | 외부 클론 (vendoring) | scan-to-scan 레이저 오도메트리 (`/odom` + odom→base_link TF). slam_toolbox는 apt(`ros-jazzy-slam-toolbox`) |
 | `src/ros2_mpu6050/` | 외부 클론 | MPU6050 I2C IMU 드라이버 + calibrate 유틸 (Pi5/Jazzy 패치) |
 | `src/r2d2_navigation/` | 직접 개발 (ament_cmake) | Nav2 내비게이션 스택 + 지도 저장 스크립트 (§6) |
+| `src/r2d2_vision/` | 직접 개발 (ament_python) | NCNN YOLO 탐지/추적 노드 (yolo_ros 인터페이스) + YOLOE 클래스 export CLI (§8) |
+| `src/yolo_msgs/` | 외부 클론 (vendoring) | yolo_ros 인터페이스 패키지 (msg/srv) + `SwitchModel.srv` 추가 |
 
 ## 1. 모터 제어 — `r2d2_motor`
 
@@ -360,6 +362,78 @@ serialize 뿐), 그런데도 이전 세션 지도가 뜨는 원인은 둘뿐:
 2. **RViz의 Map 디스플레이는 타임아웃이 없어** 퍼블리셔가 사라져도 마지막 래치
    지도를 계속 보여준다 → RViz 재시작(또는 display 껐다 켜기)이 필요
 
+## 8. 비전 — `r2d2_vision` (NCNN 탐지/추적) + `yolo_msgs`
+
+yolo_ros(mgonzs13)의 **인터페이스(msgs·토픽명)만 참고**하고, 추론은 Pi5에서 검증한
+torch-free NCNN 스택(`~/workspace/yolo`의 `ncnn_engine.py`/`bytetrack_lite`/`perf_policy`)을
+벤더링한 자체 패키지. 런타임에 torch/ultralytics **전혀 없이** ncnn+cv2+numpy만 쓴다.
+
+- **TF 체인/브링업과 독립**: 별도 세션. `r2d2_bringup.launch.py`와 엮지 말 것.
+- **카메라**: `ros-jazzy-v4l2-camera`(0.7.3, apt 설치됨)가 `/image_raw` **30 fps** 발행,
+  detection 노드는 **15 fps**로 추론(latest-frame 슬롯 — 큐 없음, 느리면 프레임 드롭,
+  지연 누적 원천 차단). 실측 `/yolo/detections` = 15.00 Hz.
+- **토픽** (ns 기본 `yolo`):
+  - `yolo/detections` — `yolo_msgs/DetectionArray` (id="")
+  - `yolo/tracking`   — ByteTrack ID 부여 (`id`=str(track_id))
+  - `yolo/debug_image` — bgr8 어노테이션 (rqt_image_view/RViz로 확인)
+- **서비스**: `yolo/switch_model` (`yolo_msgs/srv/SwitchModel`) — ncnn 모델 폴더 핫스왑
+  (트래커 리셋, ID 이어지지 않음). **open-vocab은 빌드 타임**: 텍스트/시각 프롬프트로
+  클래스를 구워 만든 뒤(`vision_export`) 그 폴더로 스위치. 런타임 re-class 없음.
+
+### 벤더 소스 (그대로 복사, 패치 최소)
+
+`r2d2_vision/` 내부 `ncnn_engine.py`·`perf_policy.py`·`light_tracker.py`·`bytetrack_lite/`는
+`~/workspace/yolo` 사본과 동일. 단 `bytetrack_lite/utils/matching.py`에 **system python에
+`lap`이 없어** try/except 실패 시 numpy JV 폴백(`_geom.linear_sum_assignment`)으로 전환
+(라벨 유지력 실측 동등). `make_tracker`는 `frame_rate=max_fps`, **`gmc_method=""`**로 강제
+(sparseOptFlow는 풀프레임 광학흐름이라 Pi5 코어 잡아먹음 — 0.65 core 예산).
+
+### YOLOE open-vocab export (`vision_export` CLI — torch는 이쪽만)
+
+ultralytics/torch/가중치/`mobileclip2_b.ts`는 `~/workspace/yolo`에 있고 **ROS 런타임 의존 아님**.
+`r2d2_vision/tools/`의 export 스크립트를 그 venv python으로 서브프로세스 실행한다.
+
+```bash
+source install/setup.bash
+# 텍스트 프롬프트 → 새 ncnn 폴더 구운 후 라이브 노드에 핫스왑
+ros2 run r2d2_vision vision_export classes --classes "cup,person,door" --out r2d2_home --switch
+# 시각 프롬프트: ROS /image_raw에서 마우스 박스 캡처 → export
+ros2 run r2d2_vision vision_export vp-capture --classes cup,person --out /tmp/vp   # GUI(디스플레이 필요)
+ros2 run r2d2_vision vision_export vp-export  --prompts /tmp/vp/prompts.json --out r2d2_vp --switch
+ros2 run r2d2_vision vision_export switch --model /home/kjh948/workspace/yolo/yolo26n_ncnn_model
+ros2 run r2d2_vision vision_export list
+```
+함정(클래스명 공백 금지 / export 폴더명=가중치 stem 충돌 / imgsz 32배수 / `-pf` 모델 re-class
+불가)은 `vision_export` help에 반영済み. `NEO_YOLO_HOME`(venv·가중치)·`NEO_YOLO_MODEL_HOME`
+env로 경로 오버라이드.
+
+### 런타임 설치 (빌드와 별개의 1회 작업 — ⚠️ 중요)
+
+system python에 ncnn이 **없다**(yolo venv에만 있음). ROS 노드는 `/usr/bin/python3`로 도므로:
+```bash
+/usr/bin/python3 -m pip install --user --break-system-packages --no-deps ncnn==1.0.20260526
+```
+**`--no-deps` 사수**: 의존성 해결이 `~/.local`에 numpy 2.x를 깔면 system numpy(1.26)를
+shadowing해서 **ROS py-binding(numpy-1 ABI) 전체가 깨진다**(cv_bridge·rclpy 포함). 설치 후
+`python3 -c "import numpy;print(numpy.__version__)"`가 여전히 `1.26.4`여야 함. 노드를
+**yolo venv python으로 실행하지 말 것**(같은 ABI 문제).
+
+### 실행
+
+```bash
+cd ~/workspace/Neo-R2D2/ros2 && source /opt/ros/jazzy/setup.bash
+colcon build --packages-select yolo_msgs            # msgs 먼저(ament_cmake)
+colcon build --packages-select r2d2_vision --symlink-install
+source install/setup.bash
+ros2 launch r2d2_vision vision.launch.py                         # 실카메라 /dev/video0
+ros2 launch r2d2_vision vision.launch.py use_camera:=false       # 외부 /image_raw 주입
+# 카메라 QoS가 best_effort면 짝 맞춰야 함(불일치=무음 무프레임): image_reliability:=0
+```
+
+`config/vision_params.yaml`에 threshold/iou/class_filter/track_* 튜닝 노트. 모델 폴더는
+package에 안 넣고 절대경로(또는 `NEO_YOLO_MODEL_HOME`). 공존 예산: slam/nav2 동작 중
+≤0.65 core / RSS ~180MB / 스왑 0 (`nice(10)` 자동).
+
 ## 빌드
 
 ```bash
@@ -371,6 +445,8 @@ git clone -b ros2 https://github.com/MAPIRlab/rf2o_laser_odometry.git src/rf2o_l
 git clone https://github.com/kimsniper/ros2_mpu6050.git src/ros2_mpu6050  # 최초 1회
 sudo apt install libi2c-dev i2c-tools                     # IMU 드라이버에 필요 (설치 완료)
 sudo apt install ros-jazzy-slam-toolbox                   # SLAM (설치 완료: 2.8.5)
+sudo apt install ros-jazzy-v4l2-camera                     # 비전 카메라 (§8, 설치 완료 0.7.3)
+/usr/bin/python3 -m pip install --user --break-system-packages --no-deps ncnn==1.0.20260526  # §8 (설치 완료)
 colcon build                    # python은 --symlink-install 권장
 source install/setup.bash
 ```

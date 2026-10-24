@@ -1,0 +1,8 @@
+# Hot-switch to another pre-baked NCNN model folder
+# (metadata.yaml + model.ncnn.param + model.ncnn.bin).
+# Open-vocab class-set changes are OFFLINE: regenerate the folder with
+# convert_yoloe.py / vp_export.py first, then point this service at it.
+string model_path
+---
+bool success
+string message
