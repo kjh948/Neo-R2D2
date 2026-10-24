@@ -86,9 +86,10 @@ def generate_launch_description():
     )
 
     # coin_d4_driver publishes no TF; the base_link->base_laser static TF is ours.
-    # Measured mount (2026-10-24): 18 cm FORWARD of base_link, 8.3 cm high;
-    # roll=pi because the COIN-D3 is mounted upside down (same convention as
-    # r2d2_bringup) — the flip restores left/right.
+    # Measured mount (2026-10-24): 18 cm FORWARD of base_link, 8.3 cm high.
+    # The COIN-D3 sits upside down, but the left/right mirror is compensated in
+    # the scan DATA (reverse: true) so base_laser stays PARALLEL to base_link
+    # (identity rotation — same convention as r2d2_bringup).
     lidar = Node(
         package="coin_d4_driver",
         executable="single_coin_d4_node",
@@ -99,6 +100,7 @@ def generate_launch_description():
             {
                 "port": LaunchConfiguration("lidar_port"),
                 "frame_id": "base_laser",  # matches nav2_params sensor_frame / rf2o
+                "reverse": True,  # upside-down mount: mirror scan DATA, keep link parallel
             },
         ],
         condition=IfCondition(LaunchConfiguration("enable_lidar")),
@@ -108,7 +110,6 @@ def generate_launch_description():
         executable="static_transform_publisher",
         name="base_link_to_base_laser",
         arguments=["--x", "0.18", "--y", "0", "--z", "0.083",
-                   "--roll", "3.141592653589793",
                    "--frame-id", "base_link", "--child-frame-id", "base_laser"],
         condition=IfCondition(LaunchConfiguration("enable_lidar")),
     )
