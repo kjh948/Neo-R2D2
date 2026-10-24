@@ -221,6 +221,7 @@ __marimo__/
 r2d2/model/vosk-model-small-en-us-0.15
 r2d2/model/vosk-model-small-ko-0.22
 # stray colcon artifacts from building at the repo root (real workspace is ros2/)
+/build/
 /install/
 /log/
 experimental/pocket-tts/prompt.wav
