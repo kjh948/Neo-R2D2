@@ -977,8 +977,16 @@ void CLaserOdometry2D::PoseUpdate()
   Pose3d pose_aux_2D = Pose3d::Identity();
 
   pose_aux_2D = rf2o::matrixYaw(double(kai_loc_(2)/fps));
-  pose_aux_2D.translation()(0) = acu_trans(0,2);
-  pose_aux_2D.translation()(1) = acu_trans(1,2);
+
+  // Neo-R2D2 vendoring patch (upside-down lidar): mirrors the estimated
+  // in-plane motion, matching upstream issue #20 ("Pose with wrong direction"
+  // — flipped lidar => tf/odom moves along the mirrored x axis; hardware
+  // re-verified on this robot 2026-10-24: drive forward -> odom_x negative
+  // while front wall distance shrank, with a geometrically correct scan).
+  // Yaw (kai_loc_(2)) is intentionally left untouched — it was reported
+  // correct with this fix. See also the lin_speed negation below.
+  pose_aux_2D.translation()(0) = -acu_trans(0,2);
+  pose_aux_2D.translation()(1) = -acu_trans(1,2);
 
   laser_pose_ = laser_pose_ * pose_aux_2D;
 
@@ -1010,7 +1018,9 @@ void CLaserOdometry2D::PoseUpdate()
   //-------------------------------------------------------------------------------------
   double time_inc_sec = (current_scan_time - last_odom_time).seconds();
   last_odom_time = current_scan_time;
-  lin_speed = acu_trans(0,2) / time_inc_sec;
+  // Neo-R2D2 vendoring patch: sign mirrors the pose-increment fix above
+  // (upside-down lidar, upstream issue #20)
+  lin_speed = -acu_trans(0,2) / time_inc_sec;
   //double lin_speed = sqrt( mrpt::math::square(robot_oldpose.x()-robot_pose.x()) + mrpt::math::square(robot_oldpose.y()-robot_pose.y()) )/time_inc_sec;
 
   double ang_inc = rf2o::getYaw(robot_pose_.rotation()) -
