@@ -29,9 +29,31 @@ except ImportError:  # pragma: no cover
     _HAS_PYSERIAL = False
 
 # ``Commander.java`` cmd constants — exact wire spellings.
+CMD_ARM = "arm"
+CMD_DEBUG = "debug"
 CMD_GIN = "gin"
+CMD_LCD = "lcd"
+CMD_LED = "led"
+CMD_LIGHTSABER = "lightsaber"
+CMD_MODE = "mode"
 CMD_MOVE = "move"
+CMD_MOVE_HEAD_ANGLE = "head-angle"
+CMD_MOVE_HEAD_DIR = "head-dir"
+CMD_MOVE_HEAD_SHIFT = "head-shift"
+CMD_PLAY_SOUND = "play_sound"
+CMD_POWER_OFF = "shut-down"
+CMD_PROJECTOR = "projector"
 CMD_READY = "ready"
+CMD_RESET = "reset-wdt"
+CMD_SET_HEAD_DIR_POWER = "d-head-power"
+CMD_SET_LEG_POWER = "d-leg-power"
+
+# ``ModeJob.prohabittedModeWhileCharging`` — typo in the original, kept as the
+# canonical name (same set as r2d2/commander.py:35).
+MODES_PROHIBITED_WHILE_CHARGING = frozenset({1, 2, 3, 4, 5, 9, 10, 12, 15})
+
+# Sentinel for led/lcd channels: key omitted from the frame = "leave alone".
+UNCHANGE = -1
 
 
 class JsonLineTransport:
@@ -49,11 +71,13 @@ class JsonLineTransport:
         read_timeout: float = 1.0,
         on_line: Optional[LineCallback] = None,
         mock: bool = False,
+        mock_responds: bool = True,
     ) -> None:
         self.device = device
         self.baudrate = baudrate
         self.read_timeout = read_timeout
         self.mock = mock
+        self.mock_responds = mock_responds
         self._on_line = on_line
         self._write_lock = threading.Lock()
         self._stop = threading.Event()
@@ -65,8 +89,9 @@ class JsonLineTransport:
         if self._port is not None:
             return
         if self.mock:
-            LOG.warning("mock transport enabled: %s (frames are logged, not sent)", self.device)
-            self._port = _MockPort()
+            LOG.warning("mock transport enabled: %s (frames are logged, not sent; canned MCU %s)",
+                        self.device, "replies on" if self.mock_responds else "replies off")
+            self._port = _MockPort(responds=self.mock_responds)
         elif _HAS_PYSERIAL:
             self._port = serial.Serial(  # type: ignore[attr-defined]
                 port=self.device,
@@ -158,12 +183,14 @@ class JsonLineTransport:
 
 
 class Commander:
-    """Locomotion subset of ``r2d2.commander.Commander``.
+    """Host -> MCU command surface, synced from ``r2d2/commander.py``.
 
-    Keeps the charging interlock: while the MCU reports a charging state,
-    ``move`` frames are dropped (mirrors ``Commander.java``'s
-    ``if (getRobotCharging() == 0)`` wrapper). ``state`` only needs a
-    ``.charging`` attribute.
+    Mirrors ``Commander.java`` including its charging interlocks: while the MCU
+    reports a charging state the locomotion/head commands are dropped silently
+    (``if (getRobotCharging() == 0)`` wrapper) and the animated modes in
+    ``MODES_PROHIBITED_WHILE_CHARGING`` are refused. ``send``-style helpers
+    return ``False`` on a write failure so callers can tell the frame did not
+    leave the box. ``state`` only needs a ``.charging`` attribute.
     """
 
     def __init__(self, transport: JsonLineTransport, state: Optional[Any] = None) -> None:
@@ -179,22 +206,108 @@ class Commander:
             LOG.error("failed to send %s: %s", payload.get("cmd"), exc)
             return False
 
+    def send_raw(self, text: str) -> bool:
+        """Write a non-JSON frame (``resetMCU`` pokes the MCU with ``''``)."""
+        try:
+            self.transport.send(text)
+            return True
+        except Exception as exc:
+            LOG.error("failed to send raw frame %r: %s", text, exc)
+            return False
+
     @property
     def charging(self) -> int:
         return self.state.charging if self.state is not None else 0
 
+    def _motion_allowed(self) -> bool:
+        return self.charging == 0
+
+    # -- lifecycle / status ---------------------------------------------------
     def software_ready(self) -> bool:
         return self._send({"cmd": CMD_READY})
 
     def gin(self) -> bool:
         return self._send({"cmd": CMD_GIN})
 
+    def reset(self) -> bool:
+        return self._send({"cmd": CMD_RESET})
+
+    def debug(self) -> bool:
+        return self._send({"cmd": CMD_DEBUG})
+
+    def power_off(self) -> bool:
+        return self._send({"cmd": CMD_POWER_OFF})
+
+    def reset_mcu(self) -> bool:
+        return self.send_raw("''")
+
+    # -- locomotion -----------------------------------------------------------
     def move(self, power: int, angle: int) -> bool:
-        if self.charging != 0:
+        if not self._motion_allowed():
             LOG.debug("move suppressed while charging")
             return False
         with self._lock:  # keep move frames ordered
             return self._send({"cmd": CMD_MOVE, "power": int(power), "angle": int(angle)})
+
+    def move_head_angle(self, angle: int) -> bool:
+        if not self._motion_allowed():
+            return False
+        return self._send({"cmd": CMD_MOVE_HEAD_ANGLE, "angle": int(angle)})
+
+    def head_shift(self, angle: int) -> bool:
+        if not self._motion_allowed():
+            return False
+        return self._send({"cmd": CMD_MOVE_HEAD_SHIFT, "angle": int(angle)})
+
+    def move_head_direction(self, direction: int) -> bool:
+        if not self._motion_allowed():
+            return False
+        return self._send({"cmd": CMD_MOVE_HEAD_DIR, "dir": int(direction)})
+
+    def change_head_power(self, power: int) -> bool:
+        return self._send({"cmd": CMD_SET_HEAD_DIR_POWER, "power": int(power)})
+
+    def change_leg_power(self, power: int) -> bool:
+        return self._send({"cmd": CMD_SET_LEG_POWER, "power": int(power)})
+
+    # -- modes ----------------------------------------------------------------
+    def mode(self, mode: int) -> bool:
+        mode = int(mode)
+        if self.charging != 0 and mode in MODES_PROHIBITED_WHILE_CHARGING:
+            LOG.info("mode %d refused while charging", mode)
+            return False
+        return self._send({"cmd": CMD_MODE, "mode": mode})
+
+    # -- accessories ----------------------------------------------------------
+    def projector_mode(self, mode: int) -> bool:
+        return self._send({"cmd": CMD_PROJECTOR, "mode": int(mode)})
+
+    def extend_arm(self, power: int) -> bool:
+        return self._send({"cmd": CMD_ARM, "power": int(power)})
+
+    def lightsaber(self, power: int) -> bool:
+        return self._send({"cmd": CMD_LIGHTSABER, "power": int(power)})
+
+    def led(self, r: int = UNCHANGE, b: int = UNCHANGE, y: int = UNCHANGE, g: int = UNCHANGE) -> bool:
+        # Insertion order matches the Java (r, b, y, g) so byte-level frame
+        # diffs against a capture of the original app still line up.
+        payload: Dict[str, Any] = {"cmd": CMD_LED}
+        for key, value in (("r", r), ("b", b), ("y", y), ("g", g)):
+            if value != UNCHANGE:
+                payload[key] = int(value)
+        return self._send(payload)
+
+    def lcd(self, s: int = UNCHANGE, l: int = UNCHANGE) -> bool:
+        payload: Dict[str, Any] = {"cmd": CMD_LCD}
+        for key, value in (("s", s), ("l", l)):
+            if value != UNCHANGE:
+                payload[key] = int(value)
+        return self._send(payload)
+
+    def play_sound(self, sound_id: int, interrupt: int = 1) -> bool:
+        """Ask the MCU to play a clip (the app plays locally; the frame exists)."""
+        return self._send(
+            {"cmd": CMD_PLAY_SOUND, "sound_id": int(sound_id), "interrupt": int(interrupt)})
 
 
 class _PosixSerial:
@@ -251,12 +364,20 @@ class _PosixSerial:
 
 
 class _MockPort:
-    """Loopback port for bench tests without hardware; logs what would be sent."""
+    """Loopback port for bench tests without hardware; logs what would be sent
+    and answers ``ready``/``gin`` with canned MCU frames so the whole
+    receive -> event-queue -> /r2d2/status pipeline can be exercised offline
+    (``mock_responds`` off = write-log only, the original behaviour)."""
 
-    def __init__(self) -> None:
+    _CANNED_GIN = ('{"cmd":"gin","batt":87,"charging-status":0,"arm":0,'
+                   '"lightsaber":0,"projector":0,"lcd_s":1,"lcd_l":1,'
+                   '"mode":0,"head":0,"error":"NO ERROR"}')
+
+    def __init__(self, responds: bool = True) -> None:
         self._inbox: list = []
         self._pending = bytearray()
         self._closed = False
+        self._responds = responds
 
     def read(self, size: int) -> bytes:
         if self._closed:
@@ -273,7 +394,14 @@ class _MockPort:
         return chunk
 
     def write(self, data: bytes) -> None:
-        LOG.info("uart tx %s", data.decode("utf-8", errors="replace").rstrip("\n"))
+        text = data.decode("utf-8", errors="replace").rstrip("\n")
+        LOG.info("uart tx %s", text)
+        if not self._responds:
+            return
+        if '"cmd":"ready"' in text:
+            self.inject('{"cmd":"ready"}')
+        elif '"cmd":"gin"' in text:
+            self.inject(self._CANNED_GIN)
 
     def flush(self) -> None:
         return None

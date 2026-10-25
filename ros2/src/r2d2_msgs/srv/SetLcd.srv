@@ -1,0 +1,5 @@
+int8 lcd_s -1
+int8 lcd_l -1
+---
+bool success
+string message

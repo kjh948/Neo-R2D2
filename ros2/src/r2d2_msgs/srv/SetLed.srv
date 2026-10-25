@@ -1,0 +1,7 @@
+int8 led_r -1
+int8 led_b -1
+int8 led_y -1
+int8 led_g -1
+---
+bool success
+string message

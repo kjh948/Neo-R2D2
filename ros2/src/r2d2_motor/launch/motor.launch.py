@@ -43,6 +43,20 @@ def generate_launch_description() -> LaunchDescription:
                               description="'differential' (teleop 4-dir), 'holonomic' (vx/vy) "
                                           "or 'tank' (nav2 vx/wz -> MCU polar — what "
                                           "r2d2_navigation uses)"),
+        DeclareLaunchArgument("gin_period", default_value="5.0",
+                              description="Seconds between MCU gin status polls (0 = no polling); "
+                                          "each reply republishes /r2d2/status"),
+        DeclareLaunchArgument("allow_power_off", default_value="false",
+                              description="Gate for /r2d2/power_off (MCU shut-down frame)"),
+        DeclareLaunchArgument("sound_enabled", default_value="true",
+                              description="Bridge -> r2d2_sound routing (projector auto-off "
+                                          "sequence, MCU play_sound frames)"),
+        DeclareLaunchArgument("status_transient", default_value="true",
+                              description="transient_local /r2d2/status (late subscribers get "
+                                          "the last known MCU state immediately)"),
+        DeclareLaunchArgument("mock_responds", default_value="true",
+                              description="mock only: canned MCU ready/gin replies so "
+                                          "/r2d2/status flows without hardware"),
         Node(
             package="r2d2_motor",
             executable="motor_node",

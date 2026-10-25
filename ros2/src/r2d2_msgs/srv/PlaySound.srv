@@ -1,0 +1,8 @@
+uint16 sound_id 0
+string clip ""
+bool interrupt False
+string request_id ""
+---
+bool success
+string message
+string clip_resolved
