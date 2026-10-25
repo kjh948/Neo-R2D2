@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>hector_map_server</name>
+  <version>0.5.2</version>
+  <description>
+    hector_map_server provides a service for retrieving the map, as well as for raycasting based obstacle queries (finds next obstacle in the map, given start and endpoint
+    in any tf coordinate frame).
+  </description>
+
+  <maintainer email="meyer@fsr.tu-darmstadt.de">Johannes Meyer</maintainer>
+
+  <license>BSD</license>
+
+  <url type="website">http://ros.org/wiki/hector_map_server</url>
+
+  <author email="kohlbrecher@sim.tu-darmstadt.de">Stefan Kohlbrecher</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  
+  <depend>rclcpp</depend>
+  <depend>hector_map_tools</depend>
+  <depend>hector_marker_drawing</depend>
+  <depend>hector_nav_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

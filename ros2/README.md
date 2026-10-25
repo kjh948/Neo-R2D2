@@ -32,6 +32,7 @@ ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
 | `src/r2d2_bringup/` | 직접 개발 (ament_python) | motor + lidar + slam + imu 통합 launch |
 | `src/coin_d4_driver/` | 외부 클론 | ROBOTIS LiDAR 드라이버 (COIN-D3/D4, LDS-02/03 계열) |
 | `src/rf2o_laser_odometry/` | 외부 클론 (vendoring) | scan-to-scan 레이저 오도메트리 (`/odom` + odom→base_link TF). slam_toolbox는 apt(`ros-jazzy-slam-toolbox`) |
+| `src/hector_slam/` | 외부 클론 (vendoring, Jazzy 패치) | hector_mapping SLAM — slam_toolbox 대체재 (`hector.launch.py`, §5). 기본 SLAM은 slam_toolbox 유지 |
 | `src/ros2_mpu6050/` | 외부 클론 | MPU6050 I2C IMU 드라이버 + calibrate 유틸 (Pi5/Jazzy 패치) |
 | `src/rosboard/` | 외부 클론 (vendoring, .git 제거) | 웹 기반 토픽 시각화 — `ros2 run rosboard rosboard_node` → http://Pi_IP:8888 (deps: python3-tornado apt, simplejpeg pip --user --no-deps, psutil 있음) |
 | `src/r2d2_navigation/` | 직접 개발 (ament_cmake) | Nav2 내비게이션 스택 + 지도 저장 스크립트 (§6) |
@@ -113,6 +114,10 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
 > 오도메트리(rf2o)를 더한 **표준 nav2 TF 체인**(map→odom→base_link) 구성.
 > hector_slam(vendored 15개 패키지)·`hector_slam.yaml`·`hector_nav.yaml`·
 > `map_server`(placeholder 지도)는 삭제됨.
+>
+> 2026-10-25: hector_slam 대체재로 복원(vendoring, Jazzy 패치 포함 이력에서 복구).
+> `ros2 launch r2d2_bringup hector.launch.py` — slam_toolbox와 동일한
+> map→odom(rf2o odom)→base_link 체인이라 rviz/nav2 설정 그대로 호환 (§5).
 
 * **rf2o_laser_odometry** — `/scan` 연속 스캔 매칭으로 `odom→base_link` TF + `/odom` 발행
   - 출처: `https://github.com/MAPIRlab/rf2o_laser_odometry` (`ros2` 브랜치) vendoring
@@ -209,6 +214,10 @@ ros2 launch r2d2_bringup r2d2_bringup.launch.py                      # motor+lid
 ros2 launch r2d2_bringup r2d2_bringup.launch.py mock:=true enable_lidar:=false
 ros2 launch r2d2_bringup r2d2_bringup.launch.py lidar_version:=4
 ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=true imu_device:=/dev/i2c-1
+
+ros2 launch r2d2_bringup hector.launch.py                            # motor+lidar+rf2o+hector
+ros2 launch r2d2_bringup hector.launch.py scan_only:=true            # rf2o 없이 hector 단독(odom 생략)
+ros2 launch r2d2_bringup hector.launch.py mock:=true enable_lidar:=false
 ```
 
 인자: `enable_motor`/`enable_lidar`/`enable_slam`/`enable_imu`, `mock`,
@@ -216,6 +225,13 @@ ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=true imu_device:=/de
 `laser_tf_x`(0.18 전방), `laser_tf_z`(0.083 높이),
 `laser_tf_roll`(기본 π — 뒤집힌 장착의 물리적 TF, §2), `lidar_reverse`(기본 false — 데이터 미러 금지, §2), `rf2o_freq`(20.0),
 `slam_params`(yaml 경로), `imu_device`(/dev/i2c-1), `imu_frame`(base_link)
+
+`hector.launch.py`는 위 인자들과 동일 구성의 lidar/rf2o/imu 파트에
+`scan_only`(기본 false)·`hector_params`(config/hector_slam.yaml 경로)를 추가.
+⚠️ hector는 posegraph이 없어 `save_map.sh`(slam_toolbox 서비스) 대신
+`ros2 run nav2_map_server map_saver_cli -f maps/<name>`(pgm/yaml)로 저장하고,
+§6의 navigation.launch(slam_toolbox localization 기본)를 쓰려면 해당 launch를
+`map_server` 기반으로 바꿔야 함 — hector는 매핑 대체재로 사용.
 
 ## 6. 내비게이션 — `r2d2_navigation`
 
