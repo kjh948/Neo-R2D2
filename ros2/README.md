@@ -147,6 +147,31 @@ r2d2 앱(`python3 -m r2d2`)이 제공하던 MCU 기능 전체를 ROS2에서 사�
   `mute`, `mock`. mp3 재생엔 mpg123/mpv/ffplay 중 하나 필요(paplay/aplay는 WAV만)
 - bringup/`hector.launch.py`의 `enable_sound`(기본 **true**)·`sound_mock`으로 제어
 
+### 오디오 백엔드 선정 검토 (2026-10-25 — 결론만 기록, 구현 보류)
+
+나중에 `experimental/pocket-tts/speak.py`식 TTS 출력을 통합할 때를 대비한
+mp3 재생 패키지 검토. **핵심: TTS가 파일이 아니라 float32 PCM 스트림이므로,
+이것은 "mp3 디코더" 선택이 아니라 "효과음 파일 + PCM 스트림을 하나의 출력
+단계로 품는 sink" 선택 문제다.** repo 안의 실제 TTS 2종(speak.py: Pocket-TTS 24kHz mono,
+xiaozhi-tui: opus→PCM 24k)이 **모두 sounddevice `OutputStream`으로 출력** —
+sink를 sounddevice로 통일하면 TTS는 그냥 같은 싱크에 청크를 넣는 일이 된다.
+
+| 후보 | mp3 | TTS PCM 스트림 | 볼륨 실질 | 의존성(aarch64) | 결론 |
+|---|---|---|---|---|---|
+| **sounddevice + soundfile** | ✅ libsndfile≥1.2 (`sf.read` 파일/**BytesIO** 실측 통과, soundfile 0.14/libsndfile 1.2.2) | ✅ 같은 라이브러리 (24k mono OutputStream 오픈 실측 OK, PipeWire default 48k 라우팅 확인) | ✅ 디코드 후 float gain 단일 지점 (현재 mpg123/mpv 무시 버그 소멸) | pip --user 필요(PEP668, rosboard 선행례). `libportaudio2` 시스템 존재 | **권장** |
+| miniaudio(pyminiaudio) | ✅ 내장 디코더 | △ API 재작성(speak.py 형태 변경) | ✅ | ❌ **aarch64 wheel/sdist 없음 실측** (pip download 양쪽 실패) | 탈락 |
+| gstreamer(PyGI) | ✅ | △ appsrc 버퍼 주입 가능하나 PyGI 비동기 보일러플레이트 | ✅ | 시스템 gst 1.24 깔려있으나 `python3-gst-1.0` 미설치(apt universe).gst로 두 스택 병존은 분기 유지와 동일 비용 | 기각 |
+| **현행 유지(subprocess 폴백)** + TTS만 sounddevice | ✅(mpg123) | ✅(별도) | ❌ mpg123 라인 볼륨 반쪽 | 없음 | ❌ sink 2중화 — 상호 last-wins/뮤트/볼륨 불가통. **TTS 통합 시점이 재검토 트리거** |
+
+**현행 유지 결정(운영자)**: r2d2_sound는 서브프로세스 엔진 그대로 사용.
+통합 구현 시기는 TTS(pocket_tts 설치 + prompt.wav 준비)가 실체화될 때로,
+그때 설계 요지: ① `SoundPlayer` 외부 API(`play/play_id/stop/set_muted/
+set_volume`/last-wins/mock)·`sound_node` 무변경 — 엔진 내부만 sink 교체,
+② 신규 `play_pcm_stream(chunks_iter, sr, ch, on_finished)` + `play_bytes(buf)`
+( BytesIO mp3 디코드 검증됨), ③ `interrupted` generation 카운터·`request_id`
+상관(projector 시퀀스) 유지, ④ import 실패 시 현행 subprocess 강등 이중 안전망,
+⑤ 벤더 헤더에 r2d2/sound.py와의 divergence 시점 명시.
+
 ### CLI 치트시트 (MCU 서비스 호출)
 
 모두 검증된 구문 (2026-10-25 mock 와이어 확인). Pi/원격 PC 공통 — 단 `source install/setup.bash`.
