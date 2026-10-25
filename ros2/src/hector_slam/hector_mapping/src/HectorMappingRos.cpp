@@ -331,7 +331,16 @@ void HectorMappingRos::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr
     // TODO: Check laser_geometry ROS2 API
     // projector_.projectLaser(*scan, laser_point_cloud_, 30.0);
     // For now, skip point cloud conversion and use direct scan conversion
-    this->rosLaserScanToDataContainer(*scan, laserScanContainer, slamProcessor->getScaleToMap());
+    //
+    // Local patch (Neo-R2D2 2026-10-25): the upstream ROS2 port left the
+    // looked-up laser_transform UNUSED (its only consumer was the commented-
+    // out point cloud path), so hector matched RAW scan bins anchored at the
+    // base_link origin. RViz and slam_toolbox transform scans through the
+    // static base_link->base_laser TF (x=0.18 + roll=pi upside-down COIN
+    // mount), so the drawn /scan was mirrored around the wrong rotation
+    // center vs. the stamped /map -> the scan visibly broke away from the
+    // map whenever the robot yawed. Apply the same TF to the scan here.
+    this->rosLaserScanToDataContainerTf(*scan, laserScanContainer, slamProcessor->getScaleToMap(), laser_transform);
 
     // Publish the point cloud if there are any subscribers (disabled for now)
     // if (scan_point_cloud_publisher_->get_subscription_count() > 0)
@@ -578,6 +587,51 @@ void HectorMappingRos::rosLaserScanToDataContainer(const sensor_msgs::msg::Laser
     {
       dist *= scaleToMap;
       dataContainer.add(Eigen::Vector2f(cos(angle) * dist, sin(angle) * dist));
+    }
+
+    angle += scan.angle_increment;
+  }
+}
+
+// Local patch (Neo-R2D2 2026-10-25), see scanCallback comment: same
+// semantics as rosPointCloudToDataContainer below, but for LaserScan bins.
+// Each point is put at z=0 in the LASER frame, transformed into the base
+// frame with the looked-up base<-laser TF (the full rotation, so a roll=pi
+// upside-down mount mirrors y exactly like RViz/slam_toolbox do), and the
+// laser_max_dist/laser_min_dist TF-space filters apply.
+void HectorMappingRos::rosLaserScanToDataContainerTf(const sensor_msgs::msg::LaserScan& scan, hectorslam::DataContainer& dataContainer, float scaleToMap, const geometry_msgs::msg::TransformStamped& laserTransform)
+{
+  size_t size = scan.ranges.size();
+
+  float angle = scan.angle_min;
+
+  dataContainer.clear();
+
+  tf2::Transform transform;
+  tf2::fromMsg(laserTransform.transform, transform);
+  tf2::Vector3 laserPos = transform.getOrigin();
+  dataContainer.setOrigo(Eigen::Vector2f(laserPos.x(), laserPos.y())*scaleToMap);
+
+  for (size_t i = 0; i < size; ++i)
+  {
+    float dist = scan.ranges[i];
+
+    if ( (dist > scan.range_min) && (dist < scan.range_max) ){
+
+      tf2::Vector3 pointPosLaserFrame(cos(angle) * dist, sin(angle) * dist, 0.0f);
+      tf2::Vector3 pointPosBaseFrame = transform * pointPosLaserFrame;
+
+      float dist_sqr = pointPosBaseFrame.x()*pointPosBaseFrame.x() + pointPosBaseFrame.y()*pointPosBaseFrame.y();
+
+      if ( (dist_sqr > p_sqr_laser_min_dist_) && (dist_sqr < p_sqr_laser_max_dist_) ){
+
+        float pointPosBaseFrameZ = pointPosBaseFrame.z() - laserPos.z();
+
+        if (pointPosBaseFrameZ > p_laser_z_min_value_ && pointPosBaseFrameZ < p_laser_z_max_value_)
+        {
+          dataContainer.add(Eigen::Vector2f(pointPosBaseFrame.x(),pointPosBaseFrame.y())*scaleToMap);
+        }
+      }
     }
 
     angle += scan.angle_increment;

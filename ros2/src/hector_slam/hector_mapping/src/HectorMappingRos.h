@@ -99,6 +99,10 @@ public:
   void publishMap(MapPublisherContainer& map_, const hectorslam::GridMap& gridMap, rclcpp::Time timestamp, MapLockerInterface* mapMutex = 0);
 
   void rosLaserScanToDataContainer(const sensor_msgs::msg::LaserScan& scan, hectorslam::DataContainer& dataContainer, float scaleToMap);
+  // Local patch (Neo-R2D2 2026-10-25): scan conversion variant that applies
+  // the base_frame<-laser_frame transform (the ROS2 port dropped the point
+  // cloud path which was the only consumer of laser_transform).
+  void rosLaserScanToDataContainerTf(const sensor_msgs::msg::LaserScan& scan, hectorslam::DataContainer& dataContainer, float scaleToMap, const geometry_msgs::msg::TransformStamped& laserTransform);
   void rosPointCloudToDataContainer(const sensor_msgs::msg::PointCloud& pointCloud, const geometry_msgs::msg::TransformStamped& laserTransform, hectorslam::DataContainer& dataContainer, float scaleToMap);
 
   void setServiceGetMapData(nav_msgs::srv::GetMap::Response& map_, const hectorslam::GridMap& gridMap);

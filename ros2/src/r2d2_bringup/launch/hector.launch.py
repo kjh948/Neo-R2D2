@@ -16,13 +16,22 @@ Components (all individually switchable):
                 must not run). Port/baud come from r2d2/config_local.json.
 * coin_d4_driver — single_coin_d4_node publishes `scan`; the base_link->base_laser
                 static TF is started here (the driver itself publishes no TF).
-                The sensor is mounted upside down, but the driver's angle/range pairing
-                already cancels the mirror in the DATA (reverse stays False) — so
-                base_laser is PARALLEL to base_link (roll=0, RViz TF arrows match) and
-                scans are geometrically correct for hector. Only remount
-                geometry changes need laser_tf_x/y/z/roll.
+                Upside-down mount convention (hardware-verified 2026-10-24):
+                roll=pi (base_laser Y/Z opposite base_link), lidar_reverse stays
+                false — the driver's angle/range pairing cancels the mirror in
+                the DATA, and consumers that respect the TF (slam_toolbox,
+                RViz, and now hector — see its local patch note below) all land
+                in the same convention. Only remount geometry changes need
+                laser_tf_x/y/z/roll.
 * hector_mapping — PURE scan-matching SLAM, config/hector_slam.yaml.
                 TF chain: map ->(hector)-> base_link ->(static)-> base_laser.
+                LOCAL PATCH (2026-10-25): this ROS2 port used to IGNORE the
+                base<-laser TF when building its scan (laser_transform lookup
+                left unused after the point-cloud path was dropped), so the
+                matched scan was a mirrored/origin-shifted copy of what RViz
+                and slam_toolbox see — the /scan broke away from the /map
+                under every yaw. HectorMappingRos.cpp now transforms every
+                scan point through the TF (rosLaserScanToDataContainerTf).
                 NO rf2o here: odom_frame == base_frame in the yaml, and an
                 rf2o session left over from the slam_toolbox bringup would
                 multi-parent base_link (odom->base_link vs map->base_link) —
@@ -100,14 +109,21 @@ def generate_launch_description():
                               description="base_laser FORWARD offset from base_link [m] (measured)"),
         DeclareLaunchArgument("laser_tf_z", default_value="0.083",
                               description="base_laser height above base_link [m] (measured 8.3 cm)"),
-        DeclareLaunchArgument("laser_tf_roll", default_value=str(math.pi),
-                              description="pi = the physical truth for the CURRENT upside-down "
-                                          "mount: base_laser Y/Z axes point opposite base_link "
-                                          "(RViz green arrows facing each other is NOT a bug). "
-                                          "Pair with lidar_reverse:=false (mirroring the DATA "
-                                          "too — reverse:=true — flips rf2o odom direction; "
-                                          "verified on hardware 2026-10-24). If the lidar is "
-                                          "ever remounted right-side-up: laser_tf_roll:=0"),
+        DeclareLaunchArgument("laser_tf_roll", default_value="0.0",
+                              description="keep 0 for hector: with lidar_reverse:=false the COIN "
+                                          "driver's angle/range pairing already cancels the "
+                                          "upside-down mirror in the scan DATA, so bins are "
+                                          "robot-view angles. The patched hector and RViz now "
+                                          "apply the SAME TF to scans, so scan/map stay aligned "
+                                          "for any roll — but roll:=pi additionally MIRRORS the "
+                                          "world (map and robot arrow turn opposite to physical). "
+                                          "0 = map keeps the true left/right of the room"),
+        DeclareLaunchArgument("laser_tf_yaw", default_value="0.0",
+                              description="heading offset (rad) of base_laser vs base_link in the "
+                                          "static TF. Set 3.14159 IF the walk test shows the map "
+                                          "rotated 180 deg (robot arrow pointing backwards while "
+                                          "driving forward) — that is the encoder-zero offset "
+                                          "signature, not a mount error"),
         DeclareLaunchArgument("hector_params",
                               default_value=os.path.join(bringup_share, "config", "hector_slam.yaml")),
         DeclareLaunchArgument("enable_imu", default_value="false",
@@ -157,6 +173,7 @@ def generate_launch_description():
             "--x", LaunchConfiguration("laser_tf_x"), "--y", "0",
             "--z", LaunchConfiguration("laser_tf_z"),
             "--roll", LaunchConfiguration("laser_tf_roll"),
+            "--yaw", LaunchConfiguration("laser_tf_yaw"),
             "--frame-id", "base_link", "--child-frame-id", "base_laser",
         ],
         condition=IfCondition(LaunchConfiguration("enable_lidar")),

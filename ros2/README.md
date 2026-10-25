@@ -121,6 +121,30 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
 > ⚠️ slam_toolbox bringup 세션(rf2o 포함)과 동시 실행 불가 — rf2o의
 > `odom→base_link`와 hector의 `map→base_link`가 base_link 다중 부모가 되므로
 > launch의 stale-session 가드가 차단한다.
+>
+> **로컬 패치(2026-10-25, 회전 시 scan/map 어긋남 대응)** —
+> `hector_mapping/src/HectorMappingRos.cpp`: 이 ROS2 포크는
+> `use_tf_scan_transformation` 분기에서 `laser_transform`을 조회만 하고
+> 정작 scan→DataContainer 변환은 raw bin 그대로 사용(point cloud 경로 폐기
+>유산, `rosLaserScanToDataContainer`는 base_link 원점 기준으로 bin 각도를
+> 해석). 즉 hector의 내부 매칭 스캔이 `base_link→base_laser` static TF
+> (x=0.18 + roll=π)을 적용하는 RViz/slam_toolbox와 다른 좌표계가 되어,
+> 라이다가 뒤집힌 상태에서 **회전할 때마다 /scan이 /map에서 어긋남**
+> (어긋남의 크기가 회전각의 약 2배). 패치 내용: `rosLaserScanToDataContainerTf`
+> 신설 — 조회된 TF로 각 스캔 점을 완전 3D 변환 후 2D 평면점 사용(point cloud
+> 경로와 동일 의미), 원점은 `origo`(센서 위치)로 반영.
+>
+> 이 패치로 **hector.launch.py의 `laser_tf_roll` 기본값이 π→0으로 바뀜**:
+> 드라이버가 데이터에서 미러를 이미 상쇄(reverse:=false)하므로 bin 각도가
+> 곧 base_link 시점 각도이고, TF까지 roll=π로 미러를 적용하면 지도가
+> 좌우반전된 세계로 만들어진다(TF 반영 소비자는 반전된 bin 해석). roll=0이면
+> 미러 상쇄가 완전 성립 — 지도의 좌우/회전 방향이 실제와 일치. slam_toolbox
+> 브링업의 π 기본값은 rf2o 체인 기준이라 그대로 유지(두 엔진의 지도가
+> 좌우반전 관계). 인코더 0점이 센서 정면을 안 가리키는 신호(전진 시 로봇
+> 화살표가 반대) 나오면 `laser_tf_yaw:=3.14159`로 보정.
+> 검증 하네스: `src/r2d2_bringup/scripts/hector_scan_align_check.py`
+> (하드웨어 불필요 — 합성 스캔으로 방/기둥/회전 시뮬레이션 후 마지막
+> 스캔의 /map 적중률 출력. roll=0: 99.7% 통과 확인)
 
 * **rf2o_laser_odometry** — `/scan` 연속 스캔 매칭으로 `odom→base_link` TF + `/odom` 발행
   - 출처: `https://github.com/MAPIRlab/rf2o_laser_odometry` (`ros2` 브랜치) vendoring
