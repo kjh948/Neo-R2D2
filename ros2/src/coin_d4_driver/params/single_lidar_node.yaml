@@ -11,9 +11,12 @@
     # [start_deg, end_deg, min_range_m] in scan-bin angles (robot view with
     # reverse:false; 0=forward, CCW positive). Readings closer than
     # min_range_m inside the sector become NaN (no-return). start>end wraps
-    # across 0 deg. Leave empty to disable (driver default: global 0.10 m).
-    # Example — ignore self-return off the shell within 0.35 m behind the
-    # robot, and a 0.5 m blind sector around the mast:
-    #   sector_min_range: [150.0, 210.0, 0.35,
-    #                      80.0,   100.0, 0.50]
-    sector_min_range: []
+    # across 0 deg. To disable, LEAVE THE LINE OUT entirely — an explicit
+    # `[]` is an untyped empty sequence for rclcpp and crashes the typed
+    # declaration (InvalidParameterValueException).
+    # Applied 2026-10-25 from live data (150 scans, robot docked, nothing
+    # real within 0.5 m): rear self-return ghost on the shell/mast spans
+    # 137.4..221.7 deg at 0.03..0.23 m (up to 100% repeat rate) -> masked
+    # with 2 deg padding each side. All other angles keep full 0.10 m
+    # sensitivity.
+    sector_min_range: [135.4, 224.6, 0.5]

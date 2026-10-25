@@ -109,10 +109,17 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
 - **각도별 최소 거리 마스킹** (로컬 패치 2026-10-25): 파라미터
   `sector_min_range` = 플랫 3개조 `[start_deg, end_deg, min_range_m, ...]`
   — 발행되는 scan bin 각도 기준(reverse:false면 로봇 시점, 0=정면 CCW+),
-  구간 내 `min_range_m` 미만 거리는 NaN(no-return)로 발행. `start>end`는 0°
-  통과 래핑(예: 350→10). 개수 3의 배수 아니면 WARN 후 무시, 기본 `[]`=비활성.
+  구간 내 `min_range_m` 미만 거리는 NaN(no-return)으로 발행. `start>end`는 0°
+  통과 래핑(예: 350→10). 개수 3의 배수 아니면 WARN 후 무시, 파라미터 라인
+  자체를 없애면 비활성 (⚠️ 명시적 `[]`는 rclcpp가 untyped empty sequence로
+  처리해 크래시 — 라인 삭제 방식으로 끌 것).
   설정: `params/single_lidar_node.yaml` 편집 또는 launch params dict에 추가.
-  용례: 본체/마스트 자체 반사 구간의 유령 장애물 제거
+- **적용 중 (2026-10-25 실측)**: `sector_min_range: [135.4, 224.6, 0.5]` —
+  독 거치 상태 150스캔 분석에서 후방 137.4..221.7° 구간만 0.03..0.23 m
+  유령 반사(재현율 최대 100%) 확인 → ±2° 패딩으로 마스킹. 그 외 전 구간은
+  0.5 m 미만 반환 0건이라 감도 유지. 마스킹 후 재검증: 대상 구간 유령 0%,
+  구간 외 정상 반환 97% 그대로. bringup/navigation launch가 같은 param
+  파일을 쓰므로 세션 전체에 자동 적용
 - 단독 구동: `ros2 launch coin_d4_driver single_lidar_node.launch.py`
   (param 파일 갈아끼우기: `single_lidar_node_param:=...`)
 - ⚠️ 이전에 쓰던 `ldlidar_ros2`(LD19) 패키지는 삭제됨 (2026-10, COIN-D3 교체)
