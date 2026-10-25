@@ -153,8 +153,14 @@ class MotorNode(Node):
         self._client.request_gin()
 
     def _send_move(self, power: int, angle: int) -> None:
-        if not self._client.move(power, angle):
-            self.get_logger().warn(f"move(power={power}, angle={angle}) failed to send")
+        if self._client.move(power, angle):
+            return
+        if self._client.status.charging != 0:
+            # Charging interlock (Commander.move drops frames while docked) —
+            # intentional suppression, not a UART failure. mcu_client already
+            # logged the transition; stay quiet through the 0.3 s repeat ticks.
+            return
+        self.get_logger().warn(f"move(power={power}, angle={angle}) failed to send")
 
     # -- shutdown ---------------------------------------------------------------
     def destroy_node(self) -> bool:

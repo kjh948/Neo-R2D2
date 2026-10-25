@@ -6,6 +6,10 @@ import json
 from .r2d2_link import Commander, JsonLineTransport
 
 
+# r2d2/state.py:14-16 CHARGING_* constants
+_CHARGING_NAMES = {0: "NOT_CHARGED", 1: "CHARGING", 2: "CHARGING_FINISHED"}
+
+
 class McuStatus:
     """Minimal state the Commander needs.
 
@@ -75,10 +79,14 @@ class McuClient:
         if charging != self.status.charging:
             self.status.charging = charging
             if self._log is not None:
+                # rclpy loggers take ONE string (no printf args — that raised
+                # TypeError until the first real dock transition, 2026-10-25).
+                # MCU mirrors Commander.java: ANY non-zero state suppresses
+                # move frames (1=charging, 2=finished-but-still-docked).
+                name = _CHARGING_NAMES.get(charging, f"unknown state {charging}")
                 self._log.info(
-                    "MCU charging status -> %d (locomotion %s)",
-                    charging,
-                    "suppressed" if charging else "allowed",
+                    f"MCU charging status -> {charging} ({name}) — locomotion "
+                    + ("suppressed while docked" if charging else "allowed again")
                 )
         batt = data.get("batt")
         if batt is not None:
