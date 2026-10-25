@@ -226,3 +226,4 @@ r2d2/model/vosk-model-small-ko-0.22
 /log/
 experimental/pocket-tts/prompt.wav
 experimental/pocket-tts/tts_output.wav
+state.json
