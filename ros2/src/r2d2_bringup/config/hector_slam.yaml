@@ -1,29 +1,26 @@
-# hector_mapping (scan-matching SLAM) params for Neo-R2D2.
+# hector_mapping (scan-matching SLAM) params for Neo-R2D2 — NO odometry input.
 # Names match the vendored hector_slam's HectorMappingRos.cpp declares (Jazzy build).
-# Same TF chain as the slam_toolbox setup (config/slam_toolbox.yaml):
-#   map ->(hector)-> odom ->(rf2o)-> base_link ->(static)-> base_laser
-# so hector is a drop-in alternative to slam_toolbox for rviz/nav2.
-#
-# scan_only mode (launch arg scan_only:=true): the launcher overrides
-# odom_frame to base_link and turns off the TF pose start estimate — hector
-# then publishes map->base_link directly, no rf2o needed.
+# hector estimates the motion from consecutive scans alone and publishes
+#   map ->(hector)-> base_link ->(static)-> base_laser
+# directly (odom_frame collapses onto base_frame — the classic scan-only setup
+# validated on this robot in 2026-10). No rf2o, no separate odom TF source.
 /**:
   ros__parameters:
 
-    # ROS frames — mirror slam_toolbox.yaml (odom->base_link comes from rf2o)
+    # ROS frames — scan-only: no odom frame in the chain
     map_frame: map
-    odom_frame: odom
+    odom_frame: base_link
     base_frame: base_link
     scan_topic: scan
 
-    # Scan matching against the rf2o odometry: TF (odom->base_link) is the
-    # pose-start guess, hector owns the map->odom correction (like slam_toolbox).
+    # Pure scan matching: no TF pose start estimate (nothing to estimate from),
+    # hector owns the whole map->base_link transform.
     use_tf_scan_transformation: true
-    use_tf_pose_start_estimate: true
+    use_tf_pose_start_estimate: false
     map_with_known_poses: false
     pub_map_odom_transform: true
     pub_map_scanmatch_transform: false
-    pub_odometry: false      # /odom is rf2o's job here
+    pub_odometry: false
     pub_drawings: false
     advertise_map_service: true
 

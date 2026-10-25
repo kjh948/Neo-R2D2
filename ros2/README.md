@@ -116,8 +116,11 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
 > `map_server`(placeholder 지도)는 삭제됨.
 >
 > 2026-10-25: hector_slam 대체재로 복원(vendoring, Jazzy 패치 포함 이력에서 복구).
-> `ros2 launch r2d2_bringup hector.launch.py` — slam_toolbox와 동일한
-> map→odom(rf2o odom)→base_link 체인이라 rviz/nav2 설정 그대로 호환 (§5).
+> `ros2 launch r2d2_bringup hector.launch.py` — **rf2o 없는 순수 스캔매칭 SLAM**:
+> hector가 `/scan`만으로 운동 추정하고 `map→base_link` TF 직접 발행 (§5).
+> ⚠️ slam_toolbox bringup 세션(rf2o 포함)과 동시 실행 불가 — rf2o의
+> `odom→base_link`와 hector의 `map→base_link`가 base_link 다중 부모가 되므로
+> launch의 stale-session 가드가 차단한다.
 
 * **rf2o_laser_odometry** — `/scan` 연속 스캔 매칭으로 `odom→base_link` TF + `/odom` 발행
   - 출처: `https://github.com/MAPIRlab/rf2o_laser_odometry` (`ros2` 브랜치) vendoring
@@ -215,8 +218,7 @@ ros2 launch r2d2_bringup r2d2_bringup.launch.py mock:=true enable_lidar:=false
 ros2 launch r2d2_bringup r2d2_bringup.launch.py lidar_version:=4
 ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=true imu_device:=/dev/i2c-1
 
-ros2 launch r2d2_bringup hector.launch.py                            # motor+lidar+rf2o+hector
-ros2 launch r2d2_bringup hector.launch.py scan_only:=true            # rf2o 없이 hector 단독(odom 생략)
+ros2 launch r2d2_bringup hector.launch.py                            # motor+lidar+hector(rf2o 없음)
 ros2 launch r2d2_bringup hector.launch.py mock:=true enable_lidar:=false
 ```
 
@@ -226,8 +228,8 @@ ros2 launch r2d2_bringup hector.launch.py mock:=true enable_lidar:=false
 `laser_tf_roll`(기본 π — 뒤집힌 장착의 물리적 TF, §2), `lidar_reverse`(기본 false — 데이터 미러 금지, §2), `rf2o_freq`(20.0),
 `slam_params`(yaml 경로), `imu_device`(/dev/i2c-1), `imu_frame`(base_link)
 
-`hector.launch.py`는 위 인자들과 동일 구성의 lidar/rf2o/imu 파트에
-`scan_only`(기본 false)·`hector_params`(config/hector_slam.yaml 경로)를 추가.
+`hector.launch.py`는 위 인자들과 동일 구성의 lidar/imu 파트를 쓰되 rf2o 없이
+`hector_mapping`(config/hector_slam.yaml, `hector_params` 인자로 경로 교체 가능)만 구동.
 ⚠️ hector는 posegraph이 없어 `save_map.sh`(slam_toolbox 서비스) 대신
 `ros2 run nav2_map_server map_saver_cli -f maps/<name>`(pgm/yaml)로 저장하고,
 §6의 navigation.launch(slam_toolbox localization 기본)를 쓰려면 해당 launch를
