@@ -40,6 +40,12 @@ struct LidarGeneralInfo
   std::string topic_name = "scan";
   bool reverse = false;
   int warmup_time = 0;
+  // Local patch (Neo-R2D2): per-angle minimum range mask. Flat triples
+  // [start_deg, end_deg, min_range_m, ...] in PUBLISHED scan-bin angles
+  // (with reverse:=false those are robot-view base_link bearings).
+  // Readings with range < min_range_m inside [start, end) (wrap allowed,
+  // e.g. 350..10) become NaN — consumers treat NaN as no-return.
+  std::vector<double> sector_min_range;
 };
 
 // LiDAR package info

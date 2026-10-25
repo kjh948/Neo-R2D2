@@ -103,6 +103,16 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
   `laser_tf_roll:=0`으로 되돌리고 §3 부호 보정과 reverse를 재검증할 것.
 - 정지 시 odom 흔들림 실측(데드밴드 적용 후, 독 위 25 s): x 스팬 6.1 mm /
   y 8.3 mm / yaw 2.85°(진동), 누적 드리프트 ~5 mm — 적용 전 5 cm/18 s 대비 1/10
+- **최소 검출 거리**: 드라이버 전역 `range_min = 0.10 m` (하드코딩,
+  `parse_lidar_serial_data`) + `≤0.15 m이면서 intensity ≤65` 근거리 노이즈 NaN
+  처리. SLAM yaml의 0.05 값은 메시지 `range_min(0.10)`에 막혀 실질 무효
+- **각도별 최소 거리 마스킹** (로컬 패치 2026-10-25): 파라미터
+  `sector_min_range` = 플랫 3개조 `[start_deg, end_deg, min_range_m, ...]`
+  — 발행되는 scan bin 각도 기준(reverse:false면 로봇 시점, 0=정면 CCW+),
+  구간 내 `min_range_m` 미만 거리는 NaN(no-return)로 발행. `start>end`는 0°
+  통과 래핑(예: 350→10). 개수 3의 배수 아니면 WARN 후 무시, 기본 `[]`=비활성.
+  설정: `params/single_lidar_node.yaml` 편집 또는 launch params dict에 추가.
+  용례: 본체/마스트 자체 반사 구간의 유령 장애물 제거
 - 단독 구동: `ros2 launch coin_d4_driver single_lidar_node.launch.py`
   (param 파일 갈아끼우기: `single_lidar_node_param:=...`)
 - ⚠️ 이전에 쓰던 `ldlidar_ros2`(LD19) 패키지는 삭제됨 (2026-10, COIN-D3 교체)

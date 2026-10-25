@@ -15,8 +15,11 @@
 // Authors: Hyeongjun Jeon
 
 #include <chrono>
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "coin_d4_driver/coin_d4_base_handler.hpp"
 
@@ -71,6 +74,25 @@ void CoinD4BaseHandler::init_structs()
     declare_parameter_once(parameter_prefix_ + "reverse", false);
   lidar_general_info_.warmup_time =
     declare_parameter_once(parameter_prefix_ + "warmup_time", 0);
+  // Local patch (Neo-R2D2): per-angle minimum-range mask, flat triples
+  // [start_deg, end_deg, min_m, ...]; see LidarGeneralInfo comment.
+  lidar_general_info_.sector_min_range =
+    declare_parameter_once<std::vector<double>>(
+    parameter_prefix_ + "sector_min_range", std::vector<double>{});
+  if (lidar_general_info_.sector_min_range.size() % 3 != 0) {
+    RCLCPP_WARN(
+      logging_interface_->get_logger(),
+      "sector_min_range needs triples of [start_deg, end_deg, min_range_m] "
+      "(got %zu values) - parameter ignored",
+      lidar_general_info_.sector_min_range.size());
+    lidar_general_info_.sector_min_range.clear();
+  }
+  if (!lidar_general_info_.sector_min_range.empty()) {
+    RCLCPP_INFO(
+      logging_interface_->get_logger(),
+      "sector_min_range: %d sector(s) active",
+      static_cast<int>(lidar_general_info_.sector_min_range.size() / 3));
+  }
   switch (lidar_general_info_.version) {
     case M1C1_Mini_v1:
       RCLCPP_INFO(logging_interface_->get_logger(), "version M1C1_Mini_v1");
@@ -316,6 +338,31 @@ void CoinD4BaseHandler::activate_publish_thread()
             } else {
               scan_msg->ranges[i] = scan.points[i].range;
               scan_msg->intensities[i] = scan.points[i].intensity;
+            }
+          }
+
+          // Local patch (Neo-R2D2): per-angle minimum-range mask, applied
+          // in the PUBLISHED scan-bin frame (after reverse). Angles wrap:
+          // [start, end) with start > end means start..360 + 0..end.
+          const auto & mask = lidar_general_info_.sector_min_range;
+          if (!mask.empty()) {
+            for (uint16_t i = 0; i < scan_msg->ranges.size(); ++i) {
+              const float r = scan_msg->ranges[i];
+              if (std::isnan(r) || r <= 0.0f) {
+                continue;  // already invalid
+              }
+              double deg = (static_cast<double>(scan_msg->angle_min) +
+                static_cast<double>(i) * scan_msg->angle_increment) * 180.0 / M_PI;
+              for (size_t s = 0; s + 2 < mask.size(); s += 3) {
+                const double start = mask[s], end = mask[s + 1], min_range = mask[s + 2];
+                const bool inside = (start <= end) ? (deg >= start && deg < end) :
+                  (deg >= start || deg < end);
+                if (inside && static_cast<double>(r) < min_range) {
+                  scan_msg->ranges[i] = std::numeric_limits<float>::quiet_NaN();
+                  scan_msg->intensities[i] = 0;
+                  break;
+                }
+              }
             }
           }
 
