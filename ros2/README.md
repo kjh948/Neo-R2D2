@@ -147,6 +147,56 @@ r2d2 앱(`python3 -m r2d2`)이 제공하던 MCU 기능 전체를 ROS2에서 사�
   `mute`, `mock`. mp3 재생엔 mpg123/mpv/ffplay 중 하나 필요(paplay/aplay는 WAV만)
 - bringup/`hector.launch.py`의 `enable_sound`(기본 **true**)·`sound_mock`으로 제어
 
+### CLI 치트시트 (MCU 서비스 호출)
+
+모두 검증된 구문 (2026-10-25 mock 와이어 확인). Pi/원격 PC 공통 — 단 `source install/setup.bash`.
+충전 중에는 move/head 계열·금지 mode가 프레임 단계에서 조용히 억제/거부된다 (§1b 표 참조).
+
+```bash
+# ---- 머리 ----
+ros2 service call /r2d2/set_head_angle  r2d2_msgs/srv/SetHeadAngle '{angle: 30}'   # 절대 각 (충전 중 억제)
+ros2 service call /r2d2/set_head_dir    r2d2_msgs/srv/SetHeadDir   '{dir: 1}'      # -1/0/1 방향 회전
+ros2 topic pub -1 /r2d2/head_shift std_msgs/msg/Int32 '{data: 5}'                  # 미세 이동(얼굴추적용, 스로틀)
+ros2 service call /r2d2/set_head_power  r2d2_msgs/srv/SetPower     '{power: 5}'    # 헤드 모터 전원(0~) — 충전 무관
+ros2 service call /r2d2/set_leg_power   r2d2_msgs/srv/SetPower     '{power: 5}'    # 다리 모터 전원
+
+# ---- 애니메이션 모드 0~20 (0 stop, 1 wake, 2 turn_around, 6 lightsaber, 7 who_are_you, 10 dance, ...) ----
+ros2 service call /r2d2/set_mode r2d2_msgs/srv/SetMode '{mode: 7}'
+# 충전 중 금지 집합 {1,2,3,4,5,9,10,12,15} → success=False
+
+# ---- 액세서리 ----
+ros2 service call /r2d2/set_arm        std_srvs/srv/SetBool '{data: true}'         # 팔 확장/회수
+ros2 service call /r2d2/set_lightsaber std_srvs/srv/SetBool '{data: true}'         # 라이트세이버
+ros2 service call /r2d2/set_projector  r2d2_msgs/srv/SetProjector '{mode: 1}'      # 1/2 = 큐 사운드 후 auto-off(30s 워치독)
+# LED 이펙트 0=NONE 1=OFF 2=ON 3=SF1 4=SF2 5=FF1 6=FF2, -1=채널 유지
+ros2 service call /r2d2/set_led r2d2_msgs/srv/SetLed '{led_r: 2, led_b: 2}'        # 빨/파 점등(노·초 유지)
+ros2 service call /r2d2/set_led r2d2_msgs/srv/SetLed '{led_r: 5, led_g: 5}'        #빨/초 FF1
+ros2 service call /r2d2/set_led r2d2_msgs/srv/SetLed '{}'                          # 전 채널 유지(UNCHANGE) — 변화 없음
+# LCD 1=닫힘 2=열림, -1=유지
+ros2 service call /r2d2/set_lcd r2d2_msgs/srv/SetLcd '{lcd_s: 2}'                  # 짧은 쪽 개방
+
+# ---- 사운드 ----
+ros2 service call /r2d2/sound/play r2d2_msgs/srv/PlaySound '{sound_id: 8}'                       # Happy Three Chirp (id 표 §1b)
+ros2 service call /r2d2/sound/play r2d2_msgs/srv/PlaySound "{clip: 'lonely_hello', interrupt: false}"  # 이름 지정
+ros2 service call /r2d2/sound/play r2d2_msgs/srv/PlaySound '{clip: "abrupt_burst", request_id: "seq-1"}'  # finished 상관용 id 부여
+ros2 service call /r2d2/sound/stop std_srvs/srv/Trigger
+ros2 service call /r2d2/sound/set_mute std_srvs/srv/SetBool '{data: true}'
+ros2 service call /r2d2/mcu_play_sound r2d2_msgs/srv/PlayMcuSound '{sound_id: 3, interrupt: false}'  # MCU 내부 스피커
+ros2 topic pub -1 /r2d2/sound/request r2d2_msgs/msg/SoundRequest '{sound_id: 9}'                     # MCU 프레임과 동일 경로
+
+# ---- 상태/버튼 관찰 ----
+ros2 topic echo /r2d2/status            # batt/charging/arm/lightsaber/projector/lcd/error (5s 폴 + transient_local)
+ros2 topic echo /r2d2/button            # 패널 버튼 1~6 (1=power_off...6=patrol) — 브리지는 발행만 함
+ros2 service call /r2d2/request_status std_srvs/srv/Trigger   # gin 즉시 폴(→ /r2d2/status)
+ros2 topic echo /r2d2/sound/finished    # 재생 종료/인터럽트 (projector 시퀀스 상관)
+
+# ---- 유지보수/전원 ----
+ros2 service call /r2d2/reset_watchdog std_srvs/srv/Trigger   # MCU WDT 리셋
+ros2 service call /r2d2/mcu_debug      std_srvs/srv/Trigger
+ros2 service call /r2d2/reset_mcu      std_srvs/srv/Trigger   # raw '' 포크
+ros2 service call /r2d2/power_off      std_srvs/srv/Trigger   # 기본 거부. 허용: motor.launch.py allow_power_off:=true
+```
+
 ## 2. LiDAR — `coin_d4_driver`
 
 - 출처: `https://github.com/ROBOTIS-GIT/coin_d4_driver` (LDS 계열 드라이버, vendoring 완료)
