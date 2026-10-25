@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
-"""Neo-R2D2 bringup: motor node + COIN lidar + rf2o odometry + slam_toolbox.
+"""Neo-R2D2 bringup: motor/MCU bridge + sound + COIN lidar + rf2o odometry + slam_toolbox.
 
     ros2 launch r2d2_bringup r2d2_bringup.launch.py
     ros2 launch r2d2_bringup r2d2_bringup.launch.py mock:=true          # UART 없이 구동 확인
     ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_lidar:=false
     ros2 launch r2d2_bringup r2d2_bringup.launch.py lidar_version:=3    # coin_d4_driver version param
     ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=true imu_device:=/dev/i2c-1
+    ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_sound:=false # 효과음 노드 제외
 
 Components (all individually switchable):
-* r2d2_motor  — /cmd_vel -> MCU move (UART owned by this node; the r2d2 app
-                must not run). Port/baud come from r2d2/config_local.json.
+* r2d2_motor  — /cmd_vel -> MCU move **plus the MCU function bridge**: head/
+                mode/projector/arm/lightsaber/led/lcd/mcu_sound services and
+                /r2d2/status|button|sound/request topics under /r2d2/ (UART
+                owned by this node; the r2d2 app must not run). Port/baud
+                come from r2d2/config_local.json.
+* r2d2_sound  — Pi speaker effects (r2d2/sound.py engine vendored); plays
+                /r2d2/sound/play + MCU play_sound frames routed by the bridge.
 * coin_d4_driver — single_coin_d4_node publishes `scan`; the base_link->base_laser
                 static TF is started here (the driver itself publishes no TF).
                 The sensor is mounted upside down and the published bins carry
@@ -67,11 +73,15 @@ def generate_launch_description():
     lidar_share = get_package_share_directory("coin_d4_driver")
     bringup_share = get_package_share_directory("r2d2_bringup")
     _guard_against_stale_session(
-        ["slam_toolbox", "rf2o_laser_odometry", "lidar_node", "r2d2_motor"])
+        ["slam_toolbox", "rf2o_laser_odometry", "lidar_node", "r2d2_motor", "r2d2_sound"])
     try:
         imu_share = get_package_share_directory("ros2_mpu6050")
     except PackageNotFoundError:  # driver not built in this workspace
         imu_share = ""
+    try:
+        sound_share = get_package_share_directory("r2d2_sound")
+    except PackageNotFoundError:  # sound node not built here
+        sound_share = ""
 
     # --- launch arguments ----------------------------------------------------
     args = [
@@ -111,9 +121,15 @@ def generate_launch_description():
                               description="MPU6050 I2C device"),
         DeclareLaunchArgument("imu_frame", default_value="base_link",
                               description="frame_id of the Imu messages"),
+        DeclareLaunchArgument("enable_sound", default_value="true",
+                              description="start r2d2_sound (Pi speaker effects; the "
+                                          "r2d2_motor bridge routes MCU play_sound "
+                                          "frames and the projector cue to it)"),
+        DeclareLaunchArgument("sound_mock", default_value="false",
+                              description="r2d2_sound: log plays, do not touch audio"),
     ]
 
-    # --- motor: /cmd_vel -> MCU move ------------------------------------------
+    # --- motor: /cmd_vel -> MCU move + MCU function bridge ---------------------
     motor = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(motor_share, "launch", "motor.launch.py")),
         launch_arguments={"mock": LaunchConfiguration("mock")}.items(),
@@ -132,13 +148,12 @@ def generate_launch_description():
                 "port": LaunchConfiguration("lidar_port"),
                 "version": ParameterValue(LaunchConfiguration("lidar_version"), value_type=int),
                 "frame_id": "base_laser",  # keep slam_toolbox/rf2o/nav2 sensor_frame consistent
-                # Default false: the driver's parse_lidar_serial_data() already pairs
-                # angle with the reversed sample index, which cancels the upside-down
-                # mount mirror. Setting reverse:=true double-mirrors the scan and made
+                # Default false: published bins are RAW sensor angles
+                # (chair test 2026-10-25) and the roll=pi TF below un-mirrors
+                # them. reverse:=true double-mirrors against roll=pi and made
                 # rf2o estimate REVERSED odometry (hardware-verified 2026-10-24:
-                # forward drive -> odom_x negative while front wall distance shrank).
-                # Use true only if you remount the lidar right-side-up OR pair it with
-                # laser_tf_roll:=pi.
+                # forward drive -> odom_x negative while front wall distance
+                # shrank). Only flip reverse together with laser_tf_roll:=0.0.
                 "reverse": ParameterValue(LaunchConfiguration("lidar_reverse"), value_type=bool),
             },
         ],
@@ -219,5 +234,16 @@ def generate_launch_description():
         components.append(LogInfo(
             condition=IfCondition(LaunchConfiguration("enable_imu")),
             msg="[r2d2_bringup] ros2_mpu6050 is not built; colcon build it to enable the IMU"))
+    if sound_share:
+        components.append(IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(sound_share, "launch", "sound.launch.py")),
+            launch_arguments={"mock": LaunchConfiguration("sound_mock")}.items(),
+            condition=IfCondition(LaunchConfiguration("enable_sound")),
+        ))
+    else:
+        components.append(LogInfo(
+            condition=IfCondition(LaunchConfiguration("enable_sound")),
+            msg="[r2d2_bringup] r2d2_sound is not built; colcon build it to enable effects"))
     components.extend([rf2o, slam, slam_lifecycle])
     return LaunchDescription(args + components)

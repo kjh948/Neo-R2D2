@@ -12,8 +12,13 @@ odom frame. hector publishes map->base_link directly from the scans.
     ros2 launch r2d2_bringup hector.launch.py enable_imu:=true imu_device:=/dev/i2c-1
 
 Components (all individually switchable):
-* r2d2_motor  — /cmd_vel -> MCU move (UART owned by this node; the r2d2 app
-                must not run). Port/baud come from r2d2/config_local.json.
+* r2d2_motor  — /cmd_vel -> MCU move **plus the MCU function bridge** (head/
+                mode/projector/arm/lightsaber/led/lcd services, /r2d2/status
+                and friends; UART owned by this node — the r2d2 app must not
+                run). Port/baud come from r2d2/config_local.json.
+* r2d2_sound  — Pi speaker effects (enable_sound, default true); plays
+                /r2d2/sound/play requests and MCU play_sound frames routed
+                by the bridge.
 * coin_d4_driver — single_coin_d4_node publishes `scan`; the base_link->base_laser
                 static TF is started here (the driver itself publishes no TF).
                 Upside-down mount convention (hardware chair test 2026-10-25):
@@ -83,11 +88,15 @@ def generate_launch_description():
     bringup_share = get_package_share_directory("r2d2_bringup")
     _guard_against_stale_session(
         ["hector_mapping", "slam_toolbox", "rf2o_laser_odometry",
-         "lidar_node", "r2d2_motor"])
+         "lidar_node", "r2d2_motor", "r2d2_sound"])
     try:
         imu_share = get_package_share_directory("ros2_mpu6050")
     except PackageNotFoundError:  # driver not built in this workspace
         imu_share = ""
+    try:
+        sound_share = get_package_share_directory("r2d2_sound")
+    except PackageNotFoundError:  # sound node not built here
+        sound_share = ""
 
     # --- launch arguments ----------------------------------------------------
     args = [
@@ -135,9 +144,15 @@ def generate_launch_description():
                               description="MPU6050 I2C device"),
         DeclareLaunchArgument("imu_frame", default_value="base_link",
                               description="frame_id of the Imu messages"),
+        DeclareLaunchArgument("enable_sound", default_value="true",
+                              description="start r2d2_sound (Pi speaker effects; the "
+                                          "r2d2_motor bridge routes MCU play_sound "
+                                          "frames and the projector cue to it)"),
+        DeclareLaunchArgument("sound_mock", default_value="false",
+                              description="r2d2_sound: log plays, do not touch audio"),
     ]
 
-    # --- motor: /cmd_vel -> MCU move ------------------------------------------
+    # --- motor: /cmd_vel -> MCU move + MCU function bridge ---------------------
     motor = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(motor_share, "launch", "motor.launch.py")),
         launch_arguments={"mock": LaunchConfiguration("mock")}.items(),
@@ -217,5 +232,16 @@ def generate_launch_description():
         components.append(LogInfo(
             condition=IfCondition(LaunchConfiguration("enable_imu")),
             msg="[r2d2_bringup] ros2_mpu6050 is not built; colcon build it to enable the IMU"))
+    if sound_share:
+        components.append(IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(sound_share, "launch", "sound.launch.py")),
+            launch_arguments={"mock": LaunchConfiguration("sound_mock")}.items(),
+            condition=IfCondition(LaunchConfiguration("enable_sound")),
+        ))
+    else:
+        components.append(LogInfo(
+            condition=IfCondition(LaunchConfiguration("enable_sound")),
+            msg="[r2d2_bringup] r2d2_sound is not built; colcon build it to enable effects"))
     components.append(slam)
     return LaunchDescription(args + components)

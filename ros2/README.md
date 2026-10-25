@@ -5,10 +5,15 @@ ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
 그리고 nav2 내비게이션까지 한 번에 올립니다.
 
 ```
-                    ┌────────────┐   /cmd_vel (Twist)
+                    ┌────────────┐   /cmd_vel (Twist) + /r2d2/* 서비스
  teleop 등 ────────▶│ r2d2_motor │────────────────────┐
-                    └────────────┘                    │ MCU UART JSON
- /dev/ttyAMA0 ◀───────────────────────────────────────┘   {"cmd":"move",...}
+  (MCU 브리지:      └─────┬──────┘                    │ MCU UART JSON
+   head/led/lcd/          │ /r2d2/status·button·      │ {"cmd":"move",...}
+   mode/…  §1b)           │ sound/request             │
+                    ┌─────▼──────┐                    │
+                    │ r2d2_sound │──▶ Pi 스피커 mp3   │
+                    └────────────┘                    │
+ /dev/ttyAMA0 ◀───────────────────────────────────────┘
 
                     ┌──────────────┐   /dev/ttyAMA1
  COIN-D3 ──────────▶│coin_d4_driver│──▶ /scan
@@ -28,8 +33,10 @@ ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
 
 | 패키지 | 종류 | 설명 |
 |---|---|---|
-| `src/r2d2_motor/` | 직접 개발 (ament_python) | Twist → MCU `move` 프레임 변환 노드 |
-| `src/r2d2_bringup/` | 직접 개발 (ament_python) | motor + lidar + slam + imu 통합 launch |
+| `src/r2d2_motor/` | 직접 개발 (ament_python) | Twist → MCU `move` 변환 + **MCU 함수 브리지** (§1b: head/led/lcd/mode/projector/arm/lightsaber 서비스, 상태 토픽) |
+| `src/r2d2_msgs/` | 직접 개발 (ament_cmake) | MCU 브리지/사운드 인터페이스 (McuStatus, ButtonEvent, SoundRequest/Finished, srv 9종) |
+| `src/r2d2_sound/` | 직접 개발 (ament_python) | Pi 스피커 효과음 노드 (`r2d2/sound.py` 벤더 엔진, §1b) |
+| `src/r2d2_bringup/` | 직접 개발 (ament_python) | motor + sound + lidar + slam + imu 통합 launch |
 | `src/coin_d4_driver/` | 외부 클론 | ROBOTIS LiDAR 드라이버 (COIN-D3/D4, LDS-02/03 계열) |
 | `src/rf2o_laser_odometry/` | 외부 클론 (vendoring) | scan-to-scan 레이저 오도메트리 (`/odom` + odom→base_link TF). slam_toolbox는 apt(`ros-jazzy-slam-toolbox`) |
 | `src/hector_slam/` | 외부 클론 (vendoring, Jazzy 패치) | hector_mapping SLAM — slam_toolbox 대체재 (`hector.launch.py`, §5). 기본 SLAM은 slam_toolbox 유지 |
@@ -48,12 +55,20 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
 
 ### 파일 구조
 
-- `motor_node.py` — `/cmd_vel` 구독, 300ms 주기 move 반복 전송, 타임아웃 자동 정지
+- `motor_node.py` — `/cmd_vel` 구독, 300ms 주기 move 반복 전송, 타임아웃 자동 정지,
+  **§1b MCU 브리지**(서비스/상태 토픽/projector 시퀀스)
 - `twist_mapping.py` — Twist → power/angle 순수 함수 (단위 테스트 11개)
-- `r2d2_link.py` — 리포의 `r2d2/transport.py` + `commander.py` 최소 **벤더본**
-  (move/ready/gin). UART 프로토콜이 바뀌면 이 파일도 동기화 필요
-- `mcu_client.py` — 링크 브리지, `gin` 응답의 `charging-status` 추적
+- `r2d2_link.py` — 리포의 `r2d2/transport.py` + `commander.py` **벤더본**
+  (2026-10-25에 전체 명령 세트로 동기화: move/head 3종/d-head·d-leg power/mode/
+  projector/arm/lightsaber/led/lcd/play_sound/reset-wdt/debug/shut-down/reset_mcu).
+  UART 프로토콜이 바뀌면 이 파일도 동기화 필요. mock 포트는 ready/gin 요청에
+  canned MCU 응답을 반환(`mock_responds`, 기본 true)해 벤치에서 `/r2d2/status` 확인 가능
+- `mcu_client.py` — 링크 브리지. reader 스레드는 gin 전체 필드 파싱 + charging
+  디바운스(도크 승차 즉시/하차·완료는 3초, 원본 r2d2/mcu_commands.py 포팅 +
+  리마운트 시 타이머 취소 보완)만 하고, 발행 가능한 이벤트는 deque에 쌓음 —
+  노드의 20ms 드레인 타이머가 executor 스레드에서 publish (rclpy 스레드 규칙)
 - `mcu_config.py` — 앱 설정(`r2d2/config_local.json`)에서 직렬 포트 기본값 로드
+- `test/test_mcu_client.py` — mock 수신 파이프라인 단위 테스트(디바운스/라우팅/인터록)
 
 ### 동작 규칙
 
@@ -80,9 +95,57 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
 `max_linear_velocity`(0.5 m/s), `max_angular_velocity`(1.0 rad/s),
 `cmd_vel_timeout`(0.5 s), `repeat_period`(0.3 s), `gin_period`(5 s),
 `deadband`(0.02), `min_power`(1), `serial_port`, `baudrate`,
-`config_file`, `mock`, `cmd_vel_topic`
+`config_file`, `mock`, `cmd_vel_topic`,
+`allow_power_off`·`sound_enabled`·`status_transient`·`mock_responds`·
+`head_shift_min_interval` (§1b 브리지)
 - `invert_strafe`는 **기본 true** (2026-10-18 실물 확인: +angular.z에 로봇이 우회전 →
   MCU 각도 부호가 ROS 컨벤션과 반대라 wz를 반전). 정방향 장착/퍼밍 변경 시 `false`
+
+## 1b. MCU 함수 브리지 & 사운드 — `/r2d2/*` + `r2d2_sound`
+
+r2d2 앱(`python3 -m r2d2`)이 제공하던 MCU 기능 전체를 ROS2에서 사용 가능하게
+노드 **하나의 브리지**로 통합 (UART는 1프로세스만 점유 가능 — 브리지가
+`ttyAMA0` 소유자, r2d2 앱과 교호 실행). 와이어 프레임/인터록은
+`r2d2/commander.py`와 1:1 동기화. 원격 PC도 DDS로 그대로 호출 가능.
+
+**서비스** (r2d2_motor, 응답 `(bool success, string message)`):
+
+| 서비스 | 타입 | MCU cmd / 비고 |
+|---|---|---|
+| `/r2d2/set_head_angle` | r2d2_msgs/srv/SetHeadAngle | head-angle (충전 중 억제) |
+| `/r2d2/set_head_dir` | SetHeadDir | head-dir (충전 중 억제) |
+| `/r2d2/set_head_power` / `set_leg_power` | SetPower | d-head-power/d-leg-power (충전 무관) |
+| `/r2d2/set_mode` | SetMode | mode 0–20 — **raw 통과**: 앱의 시퀀스 분해(사운드+헤드)는 재현 안 함, 동작 레이어가 조합. 금지 집합 {1,2,3,4,5,9,10,12,15}은 충전 중 거부 |
+| `/r2d2/set_projector` | SetProjector | projector. mode 1/2 → `/r2d2/sound/play`로 STARWAR01/01 큐 + `/r2d2/sound/finished` 상관 auto-off (30s 워치독으로 미기동에도 보장) |
+| `/r2d2/set_arm` / `set_lightsaber` | std_srvs/SetBool | arm/lightsaber power 0·1 |
+| `/r2d2/set_led` | SetLed | r,b,y,g 0–6 이펙트, **-1=채널 유지**(UNCHANGE, 프레임 생략) |
+| `/r2d2/set_lcd` | SetLcd | lcd_s/lcd_l (1=닫힘,2=열림, -1 유지) |
+| `/r2d2/mcu_play_sound` | PlayMcuSound | MCU 내부 스피커 재생 (Pi 재생이 필요하면 아래 /r2d2/sound/play) |
+| `/r2d2/reset_watchdog` `mcu_debug` `reset_mcu` `request_status` | Trigger | reset-wdt/debug/raw ''/gin 즉시 폴(응답 → /r2d2/status 갱신) |
+| `/r2d2/power_off` | Trigger | shut-down — **`allow_power_off:=true`일 때만** (기본 거부) |
+
+**토픽** (r2d2_motor 발행):
+
+| 토픽 | 타입 | 내용 |
+|---|---|---|
+| `/r2d2/status` | r2d2_msgs/McuStatus | gin 응답 전체(batt/charging/arm/…/error) + mcu_ready. **transient_local** — 5s 폴마다/변화 시 갱신, 신규 구독자 즉시 수혈 |
+| `/r2d2/button` | ButtonEvent | 물리 버튼(1~6) — 브리지는 발행만, 동작은上位 레이어 |
+| `/r2d2/sound/request` | SoundRequest | MCU `play_sound` 프레임을 사운드 노드로 라우팅 |
+| `/r2d2/head_shift` | std_msgs/Int32 **구독** | 얼굴추적 하이어레이트 경로 (`head_shift_min_interval` 스로틀) |
+
+**r2d2_sound 노드** — 효과음은 **별도 노드가 맞다**: UART 무관(로컬 플레이어
+서브프로세스), 워처 스레드+terminate의 크래시 격리, 소스 3개(서비스/MCU
+프레임/projector 큐)의 last-wins 직렬화 지점. 엔진은 `r2d2/sound.py` 벤더드
+슬라이드(`sound_engine.py`, 동기화 주석) — id 표(0–18,100,101,301,302,
+미등록=Happy Three Chirp 폴백), 플레이어 폴백(paplay→aplay→mpg123→mpv→ffplay),
+**마지막 요청 우선(원본 명세)**, 120s 워처 킬 유지.
+
+- 서비스: `/r2d2/sound/play`(PlaySound: `clip` 이름 또는 `sound_id`, `request_id`
+  에코), `/r2d2/sound/stop`, `/r2d2/sound/set_mute`
+- 발행: `/r2d2/sound/finished`(SoundFinished — `interrupted` 플래그 포함)
+- 파라미터: `sound_dir`(기본 리포 `sound_effects/`), `volume`(동적 변경),
+  `mute`, `mock`. mp3 재생엔 mpg123/mpv/ffplay 중 하나 필요(paplay/aplay는 WAV만)
+- bringup/`hector.launch.py`의 `enable_sound`(기본 **true**)·`sound_mock`으로 제어
 
 ## 2. LiDAR — `coin_d4_driver`
 
@@ -255,19 +318,22 @@ map ──(slam_toolbox)──▶ odom ──(rf2o)──▶ base_link ──(br
 ## 5. 통합 — `r2d2_bringup`
 
 ```bash
-ros2 launch r2d2_bringup r2d2_bringup.launch.py                      # motor+lidar+slam
+ros2 launch r2d2_bringup r2d2_bringup.launch.py                      # motor+sound+lidar+slam
 ros2 launch r2d2_bringup r2d2_bringup.launch.py mock:=true enable_lidar:=false
 ros2 launch r2d2_bringup r2d2_bringup.launch.py lidar_version:=4
 ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=true imu_device:=/dev/i2c-1
+ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_sound:=false  # 효과음 노드 제외
 
 ros2 launch r2d2_bringup hector.launch.py                            # motor+lidar+hector(rf2o 없음)
 ros2 launch r2d2_bringup hector.launch.py mock:=true enable_lidar:=false
 ```
 
-인자: `enable_motor`/`enable_lidar`/`enable_slam`/`enable_imu`, `mock`,
+인자: `enable_motor`/`enable_lidar`/`enable_slam`/`enable_imu`/`enable_sound`(기본 true)/
+`sound_mock`, `mock`,
 `lidar_port`(ttyAMA1), `lidar_version`(coin_d4_driver protocol),
 `laser_tf_x`(0.18 전방), `laser_tf_z`(0.083 높이),
-`laser_tf_roll`(기본 π — 뒤집힌 장착의 물리적 TF, §2), `lidar_reverse`(기본 false — 데이터 미러 금지, §2), `rf2o_freq`(20.0),
+`laser_tf_roll`(hector π / slam_toolbox 쪽 기본값 §2 — raw bin 미러를 상쇄하는 TF;
+hector는 §1b 패치 후 동일 관례), `lidar_reverse`(기본 false — 데이터 미러 금지, §2), `rf2o_freq`(20.0),
 `slam_params`(yaml 경로), `imu_device`(/dev/i2c-1), `imu_frame`(base_link)
 
 `hector.launch.py`는 위 인자들과 동일 구성의 lidar/imu 파트를 쓰되 rf2o 없이
@@ -518,6 +584,8 @@ source install/setup.bash
 |---|---|
 | Twist→move 매핑 단위 테스트 | ✅ 24/24 (`colcon test`, differential/holonomic/tank 포함) |
 | motor 노드 mock 스모크 | ✅ ready/gin/0.3→`power60 angle0` 300ms 반복/타임아웃 정지 확인 |
+| MCU 브리지(mock) | ✅ 2026-10-25 — 서비스 17종 등록, 와이어 프레임 포맷(`led` UNCHANGE 생략 등), `/r2d2/status` mock gin 응답(batt 87/mcu_ready), power_off 게이트, projector 1→사운드 큐→finished→projector 0 시퀀스 실기동 확인. 디바운스/라우팅 단위 테스트 30+5 (`test_mcu_client.py`/`test_sound_node.py`) |
+| r2d2_sound(mock) | ✅ play/MCU 프레임 라우팅/last-wins `interrupted` 플래그/finished 발행 단위 테스트 |
 | config 반영(ttyAMA0) | ✅ `config_local.json` 자동 로드, 파라미터 오버라이드 확인 |
 | 전체 패키지 빌드 | ✅ 0 failures (Pi5, Jazzy, nav2 1.3.13) |
 | bringup 기동 | ✅ motor(mock)+LiDAR+rf2o+slam_toolbox — `/odom` 10Hz, `/map`+TF 체인 실동작 (2026-10-19, hector 제거 후) |
@@ -539,7 +607,12 @@ source install/setup.bash
    `dtoverlay=uart1`) 확인, `ros2 topic echo /scan --once`로 데이터 수신 확인
 5. SLAM: rviz2(원격 PC)에서 `/map` + `/scan` + `/odom` + TF 표시
    (`ros2 topic hz /odom` ≈ 스캔률, `view_frames`로 map→odom→base_link→base_laser 확인)
-6. 충전 독에 물리면 move가 차단되는지 `gin` 응답으로 확인
+6. 충전 독에 물리면 move가 차단되는지 확인: `ros2 topic echo /r2d2/status`의
+   `charging`이 승차 0→1 즉시, 하차는 3초 디바운스 후 0 (브리지 인터록 연동)
+6b. 브리지/사운드: `ros2 service call /r2d2/set_led r2d2_msgs/srv/SetLed
+   "{led_r: 2, led_b: 2}"`(돔 점등), `set_lightsaber`/`set_arm`,
+   `ros2 topic pub -1 /r2d2/sound/request r2d2_msgs/msg/SoundRequest
+   "{sound_id: 8}"`(Pi 스피커 재생), 버튼 패널 누름 → `/r2d2/button`
 7. IMU(MPU6050): VCC→3.3V, GND, SDA/SCL을 쓰는 버스의 GPIO에 (i2c-1 = GPIO2/3),
    AD0는 GND(0x68) 또는 VCC(0x69 — `i2c_address` 파라미터로 지원).
    `i2cdetect -y 1`에 68 표시 확인 →
@@ -553,7 +626,11 @@ source install/setup.bash
   본 리포에 커밋됨). `src/ros2_mpu6050`도 커밋 시 `.git` 제거 필요.
   (구 `src/ldlidar_ros2`는 COIN-D3 교체로, `src/hector_slam`은 rf2o+slam_toolbox
   교체로 2026-10-19 삭제)
-- `r2d2_link.py`는 `r2d2` 패키지의 벤더본 — 원본 프로토콜 변경 시 동기화 필요
+- `r2d2_link.py`는 `r2d2` 패키지의 벤더본(2026-10-25 전체 명령 세트 동기화) —
+  원본 프로토콜 변경 시 동기화 필요. `r2d2_sound/sound_engine.py`도
+  `r2d2/sound.py` 벤더본과 동일 규칙
+- 사운드 last-wins: 새 요청이 진행 중 클립을 대체(원본 앱 명세). 동시 요청 유실 가능
+- `/r2d2/power_off`는 `allow_power_off:=true`일 때만 동작(기본 거부)
 - `build/`, `install/`, `log/`은 `ros2/.gitignore`로 제외
 
 
