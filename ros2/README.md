@@ -151,17 +151,18 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
 > 신설 — 조회된 TF로 각 스캔 점을 완전 3D 변환 후 2D 평면점 사용(point cloud
 > 경로와 동일 의미), 원점은 `origo`(센서 위치)로 반영.
 >
-> 이 패치로 **hector.launch.py의 `laser_tf_roll` 기본값이 π→0으로 바뀜**:
-> 드라이버가 데이터에서 미러를 이미 상쇄(reverse:=false)하므로 bin 각도가
-> 곧 base_link 시점 각도이고, TF까지 roll=π로 미러를 적용하면 지도가
-> 좌우반전된 세계로 만들어진다(TF 반영 소비자는 반전된 bin 해석). roll=0이면
-> 미러 상쇄가 완전 성립 — 지도의 좌우/회전 방향이 실제와 일치. slam_toolbox
-> 브링업의 π 기본값은 rf2o 체인 기준이라 그대로 유지(두 엔진의 지도가
-> 좌우반전 관계). 인코더 0점이 센서 정면을 안 가리키는 신호(전진 시 로봇
-> 화살표가 반대) 나오면 `laser_tf_yaw:=3.14159`로 보정.
+> **컨벤션 확정(2026-10-25 의자 실측)**: `lidar_reverse:=false`일 때 발행 bin은
+> **RAW 센서 각도**(물리적 좌측 45° 의자가 bin -45°로 도착 = 데이터가 y-미러).
+> 따라서 `laser_tf_roll` 기본값은 **π 유지** — 두 launcher(hector·slam_toolbox)
+> 모두 π이며, TF를 적용하는 소비자(패치 후 hector 내부 매칭·slam_toolbox·RViz)에서
+> 미러가 상쇄되어 **지도 좌우가 실제와 일치**한다. 한 번 roll:=0으로 바꿔 시험한
+> 결과 정렬은 되지만 좌우가 반전된 세계가 나왔고(의자 테스트), 되돌렸다.
+> 규칙: **미러 반전은 딱 하나** — reverse:=true와 roll:=0은 동시에 쓰지 말 것
+> (바르게 재장착 시: `laser_tf_roll:=0.0`, reverse는 false 유지).
+> `laser_tf_yaw`은 좌우 반전과 무관(회전이라) — 정면 물체가 뒤쪽에서 나올 때만 π.
 > 검증 하네스: `src/r2d2_bringup/scripts/hector_scan_align_check.py`
-> (하드웨어 불필요 — 합성 스캔으로 방/기둥/회전 시뮬레이션 후 마지막
-> 스캔의 /map 적중률 출력. roll=0: 99.7% 통과 확인)
+> (하드웨어 불필요 — 미러 bin+roll=π 합성 스캔으로 방/기둥/좌우 회전을 달리고
+> 마지막 스캔의 /map 적중률을 출력. est==true 포즈 + 100% 통과 확인)
 
 * **rf2o_laser_odometry** — `/scan` 연속 스캔 매칭으로 `odom→base_link` TF + `/odom` 발행
   - 출처: `https://github.com/MAPIRlab/rf2o_laser_odometry` (`ros2` 브랜치) vendoring

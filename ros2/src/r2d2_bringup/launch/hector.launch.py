@@ -16,13 +16,14 @@ Components (all individually switchable):
                 must not run). Port/baud come from r2d2/config_local.json.
 * coin_d4_driver — single_coin_d4_node publishes `scan`; the base_link->base_laser
                 static TF is started here (the driver itself publishes no TF).
-                Upside-down mount convention (hardware-verified 2026-10-24):
-                roll=pi (base_laser Y/Z opposite base_link), lidar_reverse stays
-                false — the driver's angle/range pairing cancels the mirror in
-                the DATA, and consumers that respect the TF (slam_toolbox,
-                RViz, and now hector — see its local patch note below) all land
-                in the same convention. Only remount geometry changes need
-                laser_tf_x/y/z/roll.
+                Upside-down mount convention (hardware chair test 2026-10-25):
+                lidar_reverse stays false — published bins are RAW sensor
+                angles (a left-45-deg chair arrives at bin -45), so the
+                roll=pi TF (base_laser Y/Z opposite base_link = the physical
+                truth of the inverted mount) is what un-mirrors them. All
+                consumers that respect the TF (slam_toolbox, RViz, and now
+                hector — see its local patch note below) land left-right TRUE.
+                Remount right-side-up: laser_tf_roll:=0.0.
 * hector_mapping — PURE scan-matching SLAM, config/hector_slam.yaml.
                 TF chain: map ->(hector)-> base_link ->(static)-> base_laser.
                 LOCAL PATCH (2026-10-25): this ROS2 port used to IGNORE the
@@ -109,21 +110,23 @@ def generate_launch_description():
                               description="base_laser FORWARD offset from base_link [m] (measured)"),
         DeclareLaunchArgument("laser_tf_z", default_value="0.083",
                               description="base_laser height above base_link [m] (measured 8.3 cm)"),
-        DeclareLaunchArgument("laser_tf_roll", default_value="0.0",
-                              description="keep 0 for hector: with lidar_reverse:=false the COIN "
-                                          "driver's angle/range pairing already cancels the "
-                                          "upside-down mirror in the scan DATA, so bins are "
-                                          "robot-view angles. The patched hector and RViz now "
-                                          "apply the SAME TF to scans, so scan/map stay aligned "
-                                          "for any roll — but roll:=pi additionally MIRRORS the "
-                                          "world (map and robot arrow turn opposite to physical). "
-                                          "0 = map keeps the true left/right of the room"),
+        DeclareLaunchArgument("laser_tf_roll", default_value=str(math.pi),
+                              description="pi = REQUIRED for the upside-down COIN mount "
+                                          "(hardware chair test 2026-10-25: with reverse:=false a "
+                                          "chair at physical LEFT 45 deg shows up at bin -45 deg, "
+                                          "i.e. the published data is y-mirrored — the roll=pi TF "
+                                          "is exactly what un-mirrors it). The patched hector "
+                                          "applies the same full TF to its scans as RViz/"
+                                          "slam_toolbox, so map/display stay aligned AND "
+                                          "left-right true. roll:=0 was tried here once and gave a "
+                                          "consistent but MIRRORED world — do not re-flip. Same "
+                                          "convention as r2d2_bringup.launch.py, so maps of the "
+                                          "two SLAM engines agree"),
         DeclareLaunchArgument("laser_tf_yaw", default_value="0.0",
-                              description="heading offset (rad) of base_laser vs base_link in the "
-                                          "static TF. Set 3.14159 IF the walk test shows the map "
-                                          "rotated 180 deg (robot arrow pointing backwards while "
-                                          "driving forward) — that is the encoder-zero offset "
-                                          "signature, not a mount error"),
+                              description="heading offset (rad) of base_laser vs base_link. Keep "
+                                          "0 — a yaw rotation CANNOT fix left/right mirroring. "
+                                          "Set 3.14159 only if a FORWARD object maps to the REAR "
+                                          "(180-deg encoder offset signature, not seen so far)"),
         DeclareLaunchArgument("hector_params",
                               default_value=os.path.join(bringup_share, "config", "hector_slam.yaml")),
         DeclareLaunchArgument("enable_imu", default_value="false",
@@ -153,13 +156,15 @@ def generate_launch_description():
                 "port": LaunchConfiguration("lidar_port"),
                 "version": ParameterValue(LaunchConfiguration("lidar_version"), value_type=int),
                 "frame_id": "base_laser",  # keep hector/nav2 sensor_frame consistent
-                # Default false: the driver's parse_lidar_serial_data() already pairs
-                # angle with the reversed sample index, which cancels the upside-down
-                # mount mirror. Setting reverse:=true double-mirrors the scan and made
-                # rf2o estimate REVERSED odometry (hardware-verified 2026-10-24:
-                # forward drive -> odom_x negative while front wall distance shrank).
-                # Use true only if you remount the lidar right-side-up OR pair it with
-                # laser_tf_roll:=pi.
+                # Default false = the hardware-verified convention: with roll=pi
+                # static TF below, exactly ONE mirror flip separates the raw
+                # sensor bins from the left-right-true consumer world (chair
+                # test 2026-10-25: reverse=false + roll=0 -> chair at physical
+                # LEFT shows at bin -45 = scan/map mirrored; + roll=pi -> true).
+                # Toggling reverse:=true ALSO un-mirrors, but then laser_tf_roll
+                # must go to 0.0 — the rule is: flip ONE knob, never both.
+                # (2026-10-24 rf2o evidence: reverse:=true + roll:=pi double-
+                # mirrored and made odom_x negative while the front wall shrank.)
                 "reverse": ParameterValue(LaunchConfiguration("lidar_reverse"), value_type=bool),
             },
         ],

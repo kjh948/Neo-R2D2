@@ -2,11 +2,13 @@
 """Offline check for the hector upside-down-mount scan/mirror bug.
 
 Drives hector_mapping with SYNTHETIC scans (no hardware): a rectangular room
-plus one asymmetric pillar, robot scripted through straight + yaw segments at
-10 Hz. Scans follow THIS robot's data convention: bins carry the corrected
-(= physical base-link) bearing angles (the COIN driver's angle/range pairing
-cancels the upside-down mirror), published in frame `base_laser` while a
-static base_link->base_laser TF with roll=pi, x=0.18 mimics the launcher.
+plus one asymmetric pillar/bench, robot scripted through straight + yaw
+segments at ~10 Hz. Scans follow THIS robot's hardware-verified convention
+(chair test 2026-10-25): with lidar_reverse:=false the published bins carry
+RAW sensor angles — a physical LEFT +45 deg object arrives at bin -45, i.e.
+the data is y-mirrored — and the static base_link->base_laser TF roll=pi,
+x=0.18 is what un-mirrors it for every consumer that applies the TF
+(hector — thanks to its local patch —, slam_toolbox, RViz).
 
 After the drive it computes the FRACTION of the final scan's points (mapped
 into the map frame through the same TF chain RViz uses) that land on an
@@ -39,8 +41,9 @@ SEGMENTS = ROOM + PILLAR + BENCH
 
 LASER_X = 0.18   # base_link -> base_laser offsets (mirror launcher defaults)
 LASER_Z = 0.083
-ROLL = 0.0       # launcher default (0 = keep the map left-right true)
-YAW = 0.0        # laser_tf_yaw knob (180-deg encoder offset compensation)
+ROLL = math.pi   # launcher default: the un-mirror TF for raw sensor bins
+YAW = 0.0        # laser_tf_yaw knob (180-deg encoder offset; 0 = normal)
+SCAN_MIRROR = True  # bins = RAW sensor chirality (physical +45 -> bin -45)
 
 N_BINS = 360
 RATE = 10.0      # Hz
@@ -232,8 +235,8 @@ def main():
         ye = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
         print(f"hector map->base_link: x={est.transform.translation.x:+.2f} "
               f"y={est.transform.translation.y:+.2f} yaw={math.degrees(ye):+6.1f} deg")
-        print("(EXPECT: roll=0 -> est == true; roll=pi -> est mirrors true: y->-y, yaw->-yaw;"
-              " yaw=pi -> heading stays physical, position ~ rotated 180 about start)")
+        print("(hardware convention: mirror bins + roll=pi TF -> un-mirrored scan ->"
+              " est == true pose. roll=pi + NON-mirror bins -> est mirrors true)")
     if frac is None:
         print("NO /map or no map->base_link TF received -> hector not running?")
         sys.exit(2)
@@ -242,15 +245,16 @@ def main():
 
 
 if __name__ == "__main__":
-    # optional env overrides for A/B runs:
-    #   HECTOR_TF_ROLL=0  HECTOR_TF_X=0  -> scan already in base frame
-    #   HECTOR_SCAN_MIRROR=1 -> bins = raw upside-down sensor angles
-    #       (physical base bearing = -bin; pair with HECTOR_TF_ROLL=pi)
+    # defaults reproduce THIS hardware (mirror bins + roll=pi + x=0.18).
+    # A/B overrides:
+    #   HECTOR_SCAN_MIRROR=0 -> bins already robot-view (e.g. lidar_reverse:=true)
+    #   HECTOR_TF_ROLL=0     -> launcher without the un-mirror TF
+    #   HECTOR_TF_X=0        -> sensor at base origin
     import os
     ROLL = float(os.environ.get("HECTOR_TF_ROLL", ROLL))
     LASER_X = float(os.environ.get("HECTOR_TF_X", LASER_X))
     YAW = float(os.environ.get("HECTOR_TF_YAW", YAW))
-    SCAN_MIRROR = os.environ.get("HECTOR_SCAN_MIRROR", "0") == "1"
+    SCAN_MIRROR = os.environ.get("HECTOR_SCAN_MIRROR", "1") == "1"
     try:
         main()
     except KeyboardInterrupt:

@@ -12,11 +12,13 @@ Components (all individually switchable):
                 must not run). Port/baud come from r2d2/config_local.json.
 * coin_d4_driver — single_coin_d4_node publishes `scan`; the base_link->base_laser
                 static TF is started here (the driver itself publishes no TF).
-                The sensor is mounted upside down, but the driver's angle/range pairing
-                already cancels the mirror in the DATA (reverse stays False) — so
-                base_laser is PARALLEL to base_link (roll=0, RViz TF arrows match) and
-                scans are geometrically correct for rf2o/slam_toolbox. Only remount
-                geometry changes need laser_tf_x/y/z/roll.
+                The sensor is mounted upside down and the published bins carry
+                RAW sensor angles (reverse stays False — chair test 2026-10-25:
+                physical LEFT 45 deg arrives at bin -45). The roll=pi static TF
+                (base_laser Y/Z opposite base_link) is what un-mirrors them for
+                every consumer that applies the TF (slam_toolbox, RViz). One
+                mirror flip only: remount right-side-up -> laser_tf_roll:=0.0,
+                or set lidar_reverse:=true together with roll:=0.0.
 * rf2o_laser_odometry — /scan -> /odom + odom->base_link TF (the robot has no
 *                wheel odometry; this is the only odom source).
 * slam_toolbox — async SLAM, config/slam_toolbox.yaml; owns map->odom.
