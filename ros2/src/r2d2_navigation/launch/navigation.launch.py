@@ -1,20 +1,30 @@
 #!/usr/bin/env python3
-"""Neo-R2D2 navigation: sensors + rf2o odometry + slam_toolbox localization + Nav2.
+"""Neo-R2D2 navigation: sensors + rf2o odometry + localization + Nav2.
 
+    # slam_toolbox mode (default): localize against a serialized posegraph
     ros2 launch r2d2_navigation navigation.launch.py posegraph:=<abs>/maps/r2d2_home_posegraph
+    # hector mode: hector has NO posegraph — localize against a pgm/yaml saved
+    # from a hector session with map_saver (save_map.sh SKIP_POSEGRAPH=1)
+    ros2 launch r2d2_navigation navigation.launch.py \
+        localization:=map_server map_yaml:=<abs>/maps/hector_home.yaml
     ros2 launch r2d2_navigation navigation.launch.py mock:=true enable_nav2:=false
-    (create/refresh maps with: ros2 run r2d2_navigation save_map.sh during a
-     bringup mapping session — writes maps/<name>_posegraph.{posegraph,data})
+    (create/refresh posegraph maps with: ros2 run r2d2_navigation save_map.sh
+     during a bringup mapping session — writes maps/<name>_posegraph.*;
+     for hector sessions save only pgm/yaml: SKIP_POSEGRAPH=1 save_map.sh)
 
 Architecture (differs from linorobot2 deliberately):
   * r2d2_motor runs with mapping_mode:=tank (nav2 Twist (vx, wz) -> MCU
     polar power/angle, the operator-confirmed differential kinematics)
   * NO wheel odom: rf2o_laser_odometry provides /odom + odom->base_link TF
-    from the scan; slam_toolbox (mode: localization) localizes the serialized
-    posegraph and owns map->odom. No AMCL, no map_server — slam_toolbox
-    publishes /map itself.
+    from the scan in BOTH localization modes.
+  * localization:=toolbox  — slam_toolbox (mode: localization) localizes the
+    serialized posegraph and owns map->odom; it publishes /map itself.
+  * localization:=map_server — map_server loads the saved pgm and AMCL owns
+    map->odom (the classic stack, required for hector-mapped pgm files, since
+    hector cannot serialize or reload a map). AMCL params live in
+    nav2_params.yaml.
   * Re-localization: RViz 2D Pose Estimate publishes /initialpose (handled
-    natively by slam_toolbox).
+    natively by both engines).
 
 nav2 core (planner/controller/bt/smoother/lifecycle) starts only when Nav2 is
 installed; enable_nav2:=false brings up just motor + lidar + rf2o + localization.
@@ -28,7 +38,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from nav2_common.launch import RewrittenYaml
@@ -56,15 +66,36 @@ def generate_launch_description():
     nav_share = get_package_share_directory("r2d2_navigation")
     motor_share = get_package_share_directory("r2d2_motor")
     lidar_share = get_package_share_directory("coin_d4_driver")
+    # hector_mapping too: a leftover hector session would publish map->base_link
+    # while rf2o owns odom->base_link here -> base_link gets two TF parents.
     _guard_against_stale_session(
-        ["lidar_node", "r2d2_motor", "slam_toolbox", "rf2o_laser_odometry"])
+        ["lidar_node", "r2d2_motor", "slam_toolbox", "rf2o_laser_odometry",
+         "hector_mapping"])
 
     default_posegraph = os.path.join(nav_share, "maps", "r2d2_home_posegraph")
 
+    # localization:=toolbox|map_server — one engine at a time, both behind the
+    # same enable_slam_loc switch (rf2o feeds odom->base_link in either mode).
+    cond_toolbox = IfCondition(PythonExpression([
+        "'", LaunchConfiguration("enable_slam_loc"), "' == 'true' and '",
+        LaunchConfiguration("localization"), "' == 'toolbox'"]))
+    cond_map_server = IfCondition(PythonExpression([
+        "'", LaunchConfiguration("enable_slam_loc"), "' == 'true' and '",
+        LaunchConfiguration("localization"), "' == 'map_server'"]))
+
     args = [
+        DeclareLaunchArgument("localization", default_value="toolbox",
+                              description="'toolbox': slam_toolbox localization against a "
+                                          "posegraph (default). 'map_server': map_server + AMCL "
+                                          "against a pgm/yaml map — the hector workflow, hector "
+                                          "has no posegraph to serialize."),
         DeclareLaunchArgument("posegraph", default_value=default_posegraph,
                               description="serialized slam_toolbox posegraph (path WITHOUT the "
                                           ".posegraph/.data extensions), from save_map.sh"),
+        DeclareLaunchArgument("map_yaml",
+                              default_value=os.path.join(nav_share, "maps", "r2d2_home.yaml"),
+                              description="pgm/yaml map for localization:=map_server (the .yaml "
+                                          "saved by save_map.sh SKIP_POSEGRAPH=1 / map_saver_cli)"),
         DeclareLaunchArgument("mock", default_value="false",
                               description="motor node mock UART"),
         DeclareLaunchArgument("enable_lidar", default_value="true"),
@@ -74,7 +105,8 @@ def generate_launch_description():
                                           "for the current upside-down mount (true double-"
                                           "mirrors and reverses rf2o odom; see r2d2_bringup)"),
         DeclareLaunchArgument("enable_slam_loc", default_value="true",
-                              description="rf2o odom + slam_toolbox localization (map->odom TF); keep true on hardware"),
+                              description="rf2o odom + the selected localization engine "
+                                          "(map->odom TF); keep true on hardware"),
         DeclareLaunchArgument("enable_nav2", default_value="true",
                               description="nav2 servers (requires ros-jazzy-navigation2)"),
         DeclareLaunchArgument("params_file",
@@ -145,6 +177,16 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("enable_slam_loc")),
     )
 
+    # Shared nav2 parameter file (used by map_server/AMCL below and nav2 core).
+    params = RewrittenYaml(
+        source_file=LaunchConfiguration("params_file"),
+        root_key="",
+        param_rewrites={
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+        },
+        convert_types=True,
+    )
+
     # --- slam_toolbox localization: posegraph -> /map + map->odom TF ---------------
     slam_loc = Node(
         package="slam_toolbox",
@@ -163,7 +205,7 @@ def generate_launch_description():
             )
         ],
         remappings=[("rosout", "/r2d2_slam_loc/rosout")],
-        condition=IfCondition(LaunchConfiguration("enable_slam_loc")),
+        condition=cond_toolbox,
     )
     slam_lifecycle = Node(
         package="nav2_lifecycle_manager",
@@ -175,19 +217,48 @@ def generate_launch_description():
             "autostart": True,
             "node_names": ["slam_toolbox"],
         }],
-        condition=IfCondition(LaunchConfiguration("enable_slam_loc")),
+        condition=cond_toolbox,
+    )
+
+    # --- map_server + AMCL: hector-pgm localization (localization:=map_server) ----
+    # map_server loads <map_yaml> and publishes /map; AMCL does particle-filter
+    # localization against it and owns map->odom. The dict override lands on the
+    # node's own namespace, so nav2_params.yaml keeps yaml_filename empty.
+    map_server = Node(
+        package="nav2_map_server",
+        executable="map_server",
+        name="map_server",
+        output="screen",
+        parameters=[params, {
+            "yaml_filename": LaunchConfiguration("map_yaml"),
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+        }],
+        condition=cond_map_server,
+    )
+    amcl = Node(
+        package="nav2_amcl",
+        executable="amcl",
+        name="amcl",
+        output="screen",
+        parameters=[params, {
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+        }],
+        condition=cond_map_server,
+    )
+    map_lifecycle = Node(
+        package="nav2_lifecycle_manager",
+        executable="lifecycle_manager",
+        name="lifecycle_manager_map_loc",
+        output="screen",
+        parameters=[{
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+            "autostart": True,
+            "node_names": ["map_server", "amcl"],
+        }],
+        condition=cond_map_server,
     )
 
     # --- nav2 core ---------------------------------------------------------------
-    params = RewrittenYaml(
-        source_file=LaunchConfiguration("params_file"),
-        root_key="",
-        param_rewrites={
-            "use_sim_time": LaunchConfiguration("use_sim_time"),
-        },
-        convert_types=True,
-    )
-
     common = {"output": "screen", "parameters": [params],
               "condition": IfCondition(LaunchConfiguration("enable_nav2"))}
 
@@ -225,6 +296,7 @@ def generate_launch_description():
 
     return LaunchDescription(args + [
         motor, lidar, laser_tf, rf2o, slam_loc, slam_lifecycle,
+        map_server, amcl, map_lifecycle,
         planner, controller, smoother, behavior_server, bt_navigator,
         velocity_smoother, lifecycle_manager,
     ])

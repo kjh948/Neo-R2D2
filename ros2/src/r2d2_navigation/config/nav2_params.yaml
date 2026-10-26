@@ -8,12 +8,64 @@
 #  * NO wheel odometry: rf2o_laser_odometry publishes /odom + odom->base_link
 #    TF from scan-to-scan matching; slam_toolbox (localization mode, posegraph
 #    from save_map.sh) owns map->odom and /map. Re-localization: RViz 2D Pose
-#    Estimate -> /initialpose (slam_toolbox native). AMCL/map_server absent —
-#    slam_toolbox replaces both.
+#    Estimate -> /initialpose (slam_toolbox native). map_server+AMCL are only
+#    started for the hector-map mode (localization:=map_server, see below).
 #  * r2d2_motor mapping_mode:=tank applies the SE-q18048 IK re-expressed in
 #    normalized polar form (units folded into max_linear/max_angular).
 #  * velocity_smoother enforces accel limits and feeds r2d2_motor (cmd_vel),
 #    which repeats MCU frames at 0.3 s with cmd_vel_timeout 0.5 s.
+#  * Alternative localization for hector-saved pgm maps (no posegraph exists
+#    there): navigation.launch.py localization:=map_server runs map_server +
+#    AMCL below instead of slam_toolbox. AMCL then owns map->odom and rf2o
+#    stays the odom->base_link source.
+
+map_server:
+  ros__parameters:
+    # yaml_filename is injected by launch (map_yaml:=...) — empty here so an
+    # un-rewritten params file never points at a stale map.
+    yaml_filename: ""
+    topic_name: map
+    frame_id: map
+
+amcl:
+  ros__parameters:
+    # frames: same chain as the slam_toolbox mode — AMCL takes over map->odom
+    global_frame_id: map
+    odom_frame_id: odom
+    base_frame_id: base_link
+    scan_topic: scan
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"
+    # "odom" here is rf2o scan-matching, not wheel encoders: it is smooth but
+    # drifts over longer maneuvers, so keep motion noise at the nav2 defaults
+    # (the particle filter leans on /scan anyway).
+    alpha1: 0.2
+    alpha2: 0.2
+    alpha3: 0.2
+    alpha4: 0.2
+    alpha5: 0.2
+    laser_min_range: 0.05
+    laser_max_range: 12.0          # COIN-D3 range, matches slam_toolbox/costmap limits
+    # slow-walker resample thresholds (same 0.2 m convention as minimum_travel_*)
+    update_min_d: 0.2
+    update_min_a: 0.15
+    max_particles: 2000            # Pi 5 budget — nav2 defaults, no need to grow
+    min_particles: 500
+    tf_broadcast: true
+    transform_tolerance: 1.0
+    # REQUIRED — jazzy AMCL has no auto-init: until it gets an initial pose it
+    # never publishes map->odom ("AMCL cannot publish a pose or update the
+    # transform", hardware-verified 2026-10-26), so the map frame is absent
+    # from TF and RViz/nav2 show nothing. These defaults start the filter at
+    # the map origin = the hector mapping-start pose — same convention as
+    # slam_toolbox map_start_pose [0,0,0]. RViz 2D Pose Estimate (/initialpose)
+    # overrides live if the robot starts elsewhere.
+    # the flag that makes AMCL consume those instead of waiting for /initialpose
+    set_initial_pose: true
+    initial_pose:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0
 
 bt_navigator:
   ros__parameters:

@@ -55,6 +55,38 @@ Visualization Manager:
         Reliability Policy: Reliable
       Color: 0; 255; 0
       Enabled: true
+    - Class: rviz_default_plugins/Path
+      Name: Plan (smoothed)
+      Topic:
+        Value: /plan_smoothed
+        Reliability Policy: Reliable
+      Color: 255; 255; 0
+      Enabled: false
+    - Class: rviz_default_plugins/Path
+      Name: MPPI Trajectory
+      Topic:
+        Value: /optimal_trajectory
+        Reliability Policy: Reliable
+      Color: 0; 85; 255
+      Enabled: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: MPPI Candidates
+      Topic:
+        Value: /trajectories
+        Reliability Policy: Reliable
+      Enabled: false
+    - Class: rviz_default_plugins/ParticleCloud
+      Name: AMCL Particles
+      Topic:
+        Value: /particle_cloud
+        Reliability Policy: Reliable
+      Color: 255; 0; 255
+      Enabled: false
+      Alpha: 0.5
+      Head Length: 0.1
+      Head Radius: 0.03
+      Shaft Length: 0.1
+      Shaft Radius: 0.01
   Tools:
     - Class: rviz_default_plugins/SetInitialPose
       Topic:

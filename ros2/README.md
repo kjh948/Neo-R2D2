@@ -413,10 +413,12 @@ hector는 §1b 패치 후 동일 관례), `lidar_reverse`(기본 false — 데�
 
 `hector.launch.py`는 위 인자들과 동일 구성의 lidar/imu 파트를 쓰되 rf2o 없이
 `hector_mapping`(config/hector_slam.yaml, `hector_params` 인자로 경로 교체 가능)만 구동.
-⚠️ hector는 posegraph이 없어 `save_map.sh`(slam_toolbox 서비스) 대신
-`ros2 run nav2_map_server map_saver_cli -f maps/<name>`(pgm/yaml)로 저장하고,
-§6의 navigation.launch(slam_toolbox localization 기본)를 쓰려면 해당 launch를
-`map_server` 기반으로 바꿔야 함 — hector는 매핑 대체재로 사용.
+⚠️ hector는 posegraph 개념 자체가 없다(직렬화 서비스 없음, `/map` 토픽과
+`dynamic_map`(GetMap)만 노출) — 저장은 pgm/yaml 스냅샷뿐:
+`SKIP_POSEGRAPH=1 ros2 run r2d2_navigation save_map.sh maps/<name>`
+(= `map_saver_cli -f maps/<name>`), 그리고 내비는 §6의
+`navigation.launch.py localization:=map_server`(map_server+AMCL이 그 pgm을 로드).
+hector 지도 워크플로의 전체 절차는 §6 "지도 워크플로 (hector)" 참조.
 
 ## 6. 내비게이션 — `r2d2_navigation`
 
@@ -442,7 +444,7 @@ r2d2_navigation/
 | 플래너 | NavFn | diff 로봇 표준, 경로에 heading 포함 |
 | 위치추정 | **rf2o(odom→base_link) + slam_toolbox localization(map→odom)** | wheel odom 없음 → scan 기반 레이저 odom. nav2 표준 TF 체인이 완성되어 local costmap(odom)/velocity_smoother(/odom)/MPPI가 정상 동작 |
 | 자기위치 보정 | RViz **2D Pose Estimate** → `/initialpose` (slam_toolbox 네이티브) | 출발 기본값 `map_start_pose: [0,0,0]` (매핑 시작 지점), 어딘가에 출발하면 클릭으로 보정 |
-| 지도 | slam_toolbox가 posegraph 로드 후 `/map` 직접 발행 (map_server 폐지) | 저장: `save_map.sh` → `_posegraph.{posegraph,data}` + `.pgm/.yaml` |
+| 지도 | 기본: slam_toolbox가 posegraph 로드 후 `/map` 직접 발행. hector 지도용 대안: `localization:=map_server`(map_server+AMCL, pgm/yaml 로드) | slam_toolbox 저장: `save_map.sh` → posegraph+pgm/yaml. hector 저장: `SKIP_POSEGRAPH=1 save_map.sh` → pgm/yaml뿐 |
 | goal checker | xy 0.15 / **yaw 0.25** (회전 유효) | — |
 | BT | nav2 기본 recovery tree (**Spin 포함** 가능) | 커스텀 no-spin 트리 폐기됨 |
 
@@ -468,8 +470,44 @@ ros2 launch r2d2_navigation navigation.launch.py \
 #    ① 2D Pose Estimate로 실제 위치 지정 → ② 2D Goal Pose로 목표 발행
 ```
 
-(구 `maps/placeholder.*` + map_server 방식은 hector 제거와 함께 폐지 — navigation의
-지도 입력은 posegraph 전용. headless 스택 검증에는 `posegraph:=`에 실제 지도 필요)
+(기본 모드는 posegraph 전용 — headless 스택 검증에는 `posegraph:=`에 실제 지도 필요.
+map_server+AMCL 모드는 아래 hector 워크플로용)
+
+### 지도 워크플로 (hector)
+
+hector에는 포즈그래그가 없다(직렬화 서비스 없음, `/map`과 `dynamic_map`(GetMap)만
+노출) — 지도의 영속 형태는 **pgm/yaml 한 장**이고, 내비게이션 때는 그 지도를
+map_server+AMCL이 맡는다(hector 자체는 내비 세션에서 재실행하지 않는다).
+
+```bash
+# 1) 매핑: Pi에서 hector 구동(hector/slam_toolbox 동시 실행은 launch 가드가 거부),
+#    원격 PC RViz로 확인하며 주행. slam_toolbox와 달리 정지 상태 저장도 안전하지만
+#    지도 품질 위해 주행 후 저장 권장.
+ros2 launch r2d2_bringup hector.launch.py                   # Pi
+ros2 launch r2d2_bringup remote.launch.py                   # 원격 PC (rviz_slam.rviz)
+
+# 2) 저장: posegraph 단계 건너뛰고 pgm/yaml만 (결국 map_saver_cli -f <name>)
+SKIP_POSEGRAPH=1 ros2 run r2d2_navigation save_map.sh <ws>/src/r2d2_navigation/maps/hector_home
+colcon build --packages-select r2d2_navigation              # install 사본 갱신
+
+# 3) 내비: slam_toolbox 대신 map_server+AMCL (hector pgm을 localization 엔진으로)
+ros2 launch r2d2_navigation navigation.launch.py localization:=map_server \
+    map_yaml:=$(ros2 pkg prefix r2d2_navigation)/share/r2d2_navigation/maps/hector_home.yaml
+#    원격 RViz/2D Pose Estimate/Goal 사용법은 위 slam_toolbox 워크플로와 동일
+```
+
+- AMCL은 `/odom`(rf2o)으로 예측하고 `/scan`으로 입자를 갱신 — 파라미터는
+  `nav2_params.yaml`의 `amcl:`/`map_server:` 블록(jazzy 기본 + COIN 0.05–12m,
+  slow-walker `update_min_d/a` 0.2/0.15). rf2o는 여전히 필요하므로
+  `enable_slam_loc:=false`로 내리면 안 된다.
+- 초기위치: **`set_initial_pose: true` + `initial_pose: [0,0,0]`이 킬러 파라미터**
+  (2026-10-26 실측) — 이거 없으면 jazzy AMCL이 "AMCL cannot publish a pose…"
+  warning만 찍으며 map→odom TF를 영구 미발행, TF에 `map` 프레임이 없어 RViz/nav2가
+  하얗게 빈 화면으로 보인다. 기본값 0,0,0 = hector 매핑 시작 지점(slam_toolbox
+  `map_start_pose: [0,0,0]`과 동일 관례). 다른 곳에서 출발하면 RViz 2D Pose
+  Estimate(`/initialpose`)로 덮어쓴다.
+- hector 매핑 세션이 남은 채 navigation.launch를 띄우면 가드가 거부 — hector의
+  map→base_link와 rf2o의 odom→base_link가 base_link 이중 부모가 된다.
 
 ### 검증 상태 (nav2)
 - 1.3.13 파라미터 실측 통과: SmacPlanner→NavFn 교체, MPPI DiffDrive,
