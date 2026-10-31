@@ -36,10 +36,4 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
-install(
-  PROGRAMS scripts/analyze_imu.py
-  DESTINATION lib/${PROJECT_NAME}
-  RENAME analyze_imu
-)
-
 ament_package()

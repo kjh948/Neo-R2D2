@@ -1,12 +1,11 @@
 # Sensor related parameters
 mpu6050_sensor:
   ros__parameters:
-    # Sensor frame. Use a dedicated imu_link and publish its static transform
-    # to base_link if the sensor is not aligned with the robot axes.
+    # Local fork additions: I2C device, slave address (0x68 AD0->GND, 0x69 AD0->VCC),
+    # and frame_id of published Imu messages.
+    device: "/dev/i2c-1"
+    i2c_address: 0x68
     imu_frame: base_link
-    device: /dev/i2c-1
-    i2c_address: 104
-
     #FS_SEL  |  Full Scale Range
     #        |
     #   0    |  +- 250 deg/s
@@ -52,12 +51,3 @@ mpu6050_sensor:
     accel_x_offset: 0.0
     accel_y_offset: 0.0
     accel_z_offset: 0.0
-
-    # Diagonal measurement variances; zero means not yet measured/configured.
-    # Units: (rad/s)^2 for gyro, (m/s^2)^2 for acceleration.
-    gyro_x_variance: 0.0
-    gyro_y_variance: 0.0
-    gyro_z_variance: 0.0
-    accel_x_variance: 0.0
-    accel_y_variance: 0.0
-    accel_z_variance: 0.0

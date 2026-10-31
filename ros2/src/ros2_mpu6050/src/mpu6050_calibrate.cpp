@@ -4,9 +4,9 @@
 #include <iostream>
 #include <unistd.h>
 
-void calibration()
+void calibration(const std::string &device, int address)
 {
-    auto mpu6050_dev = std::make_shared<Mpu6050>();
+    auto mpu6050_dev = std::make_shared<Mpu6050>(device, address);
     const int no_of_samples = 500;
 
     double gyro_x_offset {0.0};
@@ -57,12 +57,14 @@ void calibration()
 
 }
 
+// Local fork: accept the I2C device path and address so calibration works on
+// multi-digit Pi5 buses (/dev/i2c-13, /dev/i2c-14) and AD0-high boards (0x69).
 int main(int argc, char* argv[])
 {
-    (void)argc;
-    (void)argv;
+    std::string device = (argc > 1) ? argv[1] : "/dev/i2c-1";
+    int address = (argc > 2) ? std::stoi(argv[2], nullptr, 0) : 0x68;
 
-    calibration();
+    calibration(device, address);
 
     return 0;
 }

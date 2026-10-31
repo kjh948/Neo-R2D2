@@ -9,37 +9,21 @@ Mpu6050Node::Mpu6050Node(const std::string& name)
     : Node(name)
 {
     // Declare parameters
+    // Local fork additions for Neo-R2D2: upstream hard-coded /dev/i2c-1,
+    // address 0x68 and frame_id "base_link".
     this->declare_parameter<std::string>("device", "/dev/i2c-1");
-    this->declare_parameter<int>("i2c_address", I2C_ADDRESS_MPU6050_AD0_L);
+    this->declare_parameter<int>("i2c_address", 0x68);
     this->declare_parameter<std::string>("imu_frame", "base_link");
     this->declare_parameter<int>("gyro_fs_sel", 0);
     this->declare_parameter<int>("accel_afs_sel", 0);
     this->declare_parameter<int>("dlpf_cfg", 0);
     this->declare_parameter<int>("clock_src", 0);
-    this->declare_parameter<double>("gyro_x_variance", 0.0);
-    this->declare_parameter<double>("gyro_y_variance", 0.0);
-    this->declare_parameter<double>("gyro_z_variance", 0.0);
-    this->declare_parameter<double>("accel_x_variance", 0.0);
-    this->declare_parameter<double>("accel_y_variance", 0.0);
-    this->declare_parameter<double>("accel_z_variance", 0.0);
     this->declare_parameter<double>("gyro_x_offset", 0.0);
     this->declare_parameter<double>("gyro_y_offset", 0.0);
     this->declare_parameter<double>("gyro_z_offset", 0.0);
     this->declare_parameter<double>("accel_x_offset", 0.0);
     this->declare_parameter<double>("accel_y_offset", 0.0);
     this->declare_parameter<double>("accel_z_offset", 0.0);
-
-    imu_frame_ = this->get_parameter("imu_frame").as_string();
-    const auto device = this->get_parameter("device").as_string();
-    const auto i2c_address = this->get_parameter("i2c_address").as_int();
-    mpu6050_dev_ = std::make_unique<Mpu6050>(device, static_cast<int>(i2c_address));
-
-    gyro_x_variance_ = this->get_parameter("gyro_x_variance").as_double();
-    gyro_y_variance_ = this->get_parameter("gyro_y_variance").as_double();
-    gyro_z_variance_ = this->get_parameter("gyro_z_variance").as_double();
-    accel_x_variance_ = this->get_parameter("accel_x_variance").as_double();
-    accel_y_variance_ = this->get_parameter("accel_y_variance").as_double();
-    accel_z_variance_ = this->get_parameter("accel_z_variance").as_double();
 
     /* Assign offset values */
     gyro_x_offset_ = this->get_parameter("gyro_x_offset").as_double();
@@ -48,6 +32,10 @@ Mpu6050Node::Mpu6050Node(const std::string& name)
     accel_x_offset_ = this->get_parameter("accel_x_offset").as_double();
     accel_y_offset_ = this->get_parameter("accel_y_offset").as_double();
     accel_z_offset_ = this->get_parameter("accel_z_offset").as_double();
+
+    mpu6050_dev_ = std::make_unique<Mpu6050>(this->get_parameter("device").as_string(),
+                                             this->get_parameter("i2c_address").as_int());
+    imu_frame_ = this->get_parameter("imu_frame").as_string();
 
     /* Assign sensor paramaters */
     mpu6050_dev_->Mpu6050_GyroFsSel(static_cast<Mpu6050::Mpu6050_FsSel_t>(this->get_parameter("gyro_fs_sel").as_int()));
@@ -65,10 +53,7 @@ void Mpu6050Node::ImuPubCallback()
     auto message = sensor_msgs::msg::Imu();
     message.header.stamp = this->get_clock()->now();
     message.header.frame_id = imu_frame_;
-    message.linear_acceleration_covariance = {
-        accel_x_variance_, 0.0, 0.0,
-        0.0, accel_y_variance_, 0.0,
-        0.0, 0.0, accel_z_variance_};
+    message.linear_acceleration_covariance = {0};
 
     /* Read IMU data */
     Mpu6050::Mpu6050_AccelData_t AccelData;
@@ -80,10 +65,7 @@ void Mpu6050Node::ImuPubCallback()
     message.linear_acceleration.x = AccelData.Accel_X - accel_x_offset_;
     message.linear_acceleration.y = AccelData.Accel_Y - accel_y_offset_;
     message.linear_acceleration.z = AccelData.Accel_Z - accel_z_offset_;
-    message.angular_velocity_covariance = {
-        gyro_x_variance_, 0.0, 0.0,
-        0.0, gyro_y_variance_, 0.0,
-        0.0, 0.0, gyro_z_variance_};
+    message.angular_velocity_covariance[0] = {0};
     message.angular_velocity.x = (GyroData.Gyro_X - gyro_x_offset_) * (M_PI / 180.0);
     message.angular_velocity.y = (GyroData.Gyro_Y - gyro_y_offset_) * (M_PI / 180.0);
     message.angular_velocity.z = (GyroData.Gyro_Z - gyro_z_offset_) * (M_PI / 180.0);

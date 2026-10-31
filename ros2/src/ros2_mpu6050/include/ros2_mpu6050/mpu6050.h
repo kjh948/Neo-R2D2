@@ -32,6 +32,8 @@
 #ifndef MPU6050SENSOR_H
 #define MPU6050SENSOR_H
 
+#include <array>  // GCC13+ no longer includes this transitively
+
 #include "ros2_mpu6050/mpu6050_hal.h"
 
 #include <string>

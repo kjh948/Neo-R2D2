@@ -5,8 +5,6 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 
-#include <string>
-
 class Mpu6050Node : public rclcpp::Node {
  public:
   Mpu6050Node(const std::string& name);
@@ -14,6 +12,7 @@ class Mpu6050Node : public rclcpp::Node {
  private:
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr publisher_;
   std::unique_ptr<Mpu6050> mpu6050_dev_;
+  std::string imu_frame_;
   rclcpp::TimerBase::SharedPtr timer_;
   void ImuPubCallback();
 
@@ -24,13 +23,6 @@ class Mpu6050Node : public rclcpp::Node {
   double accel_y_offset_ {0.0};
   double accel_z_offset_ {0.0};
 
-  double gyro_x_variance_ {0.0};
-  double gyro_y_variance_ {0.0};
-  double gyro_z_variance_ {0.0};
-  double accel_x_variance_ {0.0};
-  double accel_y_variance_ {0.0};
-  double accel_z_variance_ {0.0};
-  std::string imu_frame_ {"base_link"};
 };
 
 #endif  // MPU6050DRIVER_H
