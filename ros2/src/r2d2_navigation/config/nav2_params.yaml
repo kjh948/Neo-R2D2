@@ -5,7 +5,7 @@
 #    (v, omega): angle 0/180 = forward/reverse, ±90 = in-place rotation,
 #    between = turning arcs. The robot is therefore a standard differential
 #    base and nav2 runs with its usual diff-drive assumptions.
-#  * NO wheel odometry: rf2o_laser_odometry publishes /odom + odom->base_link
+#  * NO wheel odometry: robot_localization publishes /odom + odom->base_link
 #    TF from scan-to-scan matching; slam_toolbox (localization mode, posegraph
 #    from save_map.sh) owns map->odom and /map. Re-localization: RViz 2D Pose
 #    Estimate -> /initialpose (slam_toolbox native). map_server+AMCL are only
@@ -135,7 +135,7 @@ controller_server:
       transform_tolerance: 0.2
       trajectory_visualization: true
       # state read from TF (use_odometry stays default false) — odom frame now
-      # exists via rf2o, so map->odom->base_link resolves as nav2 expects.
+      # exists via the EKF, so map->odom->base_link resolves as nav2 expects.
       odom_frame: odom
       odometry_topic: /odom
       # default critic set (Constraint/Obstacles/Goal/GoalAngle/PathAlign/
@@ -215,7 +215,7 @@ velocity_smoother:
     min_velocity: [-0.15, 0.0, -0.8]
     max_accel: [0.5, 0.0, 1.0]
     max_decel: [-0.5, 0.0, -1.0]
-    odom_topic: /odom          # rf2o now feeds it (was "" — no odom existed in the hector era)
+    odom_topic: /odom          # robot_localization publishes the fused odometry
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.0

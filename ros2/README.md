@@ -19,8 +19,11 @@ ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
  COIN-D3 ──────────▶│coin_d4_driver│──▶ /scan
                     └────────────┘        │
                     ┌─────────────┐        ▼
-                    │ rf2o_laser_ │──▶ /odom, TF: odom → base_link
-                    │ odometry    │
+                    │ rf2o_laser_ │──▶ /odom_rf2o
+                    │ odometry    │        │
+                    ├─────────────┤        ▼
+                    │ robot_local│◀── /imu/mpu6050 (optional; default on)
+                    │ ization EKF│──▶ /odom, TF: odom → base_link
                     ├─────────────┤
                     │ slam_toolbox│──▶ /map, TF: map → odom
                     └─────────────┘
@@ -36,9 +39,9 @@ ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
 | `src/r2d2_motor/` | 직접 개발 (ament_python) | Twist → MCU `move` 변환 + **MCU 함수 브리지** (§1b: head/led/lcd/mode/projector/arm/lightsaber 서비스, 상태 토픽) |
 | `src/r2d2_msgs/` | 직접 개발 (ament_cmake) | MCU 브리지/사운드 인터페이스 (McuStatus, ButtonEvent, SoundRequest/Finished, srv 9종) |
 | `src/r2d2_sound/` | 직접 개발 (ament_python) | Pi 스피커 효과음 노드 (`r2d2/sound.py` 벤더 엔진, §1b) |
-| `src/r2d2_bringup/` | 직접 개발 (ament_python) | motor + sound + lidar + slam + imu 통합 launch |
+| `src/r2d2_bringup/` | 직접 개발 (ament_python) | motor + sound + lidar + RF2O/IMU EKF + slam 통합 launch |
 | `src/coin_d4_driver/` | 외부 클론 | ROBOTIS LiDAR 드라이버 (COIN-D3/D4, LDS-02/03 계열) |
-| `src/rf2o_laser_odometry/` | 외부 클론 (vendoring) | scan-to-scan 레이저 오도메트리 (`/odom` + odom→base_link TF). slam_toolbox는 apt(`ros-jazzy-slam-toolbox`) |
+| `src/rf2o_laser_odometry/` | 외부 클론 (vendoring) | scan-to-scan 레이저 원본 오도메트리 (`/odom_rf2o`); EKF가 `/odom` + odom→base_link TF 발행 |
 | `src/hector_slam/` | 외부 클론 (vendoring, Jazzy 패치) | hector_mapping SLAM — slam_toolbox 대체재 (`hector.launch.py`, §5). 기본 SLAM은 slam_toolbox 유지 |
 | `src/ros2_mpu6050/` | 외부 클론 | MPU6050 I2C IMU 드라이버 + calibrate 유틸 (Pi5/Jazzy 패치) |
 | `src/rosboard/` | 외부 클론 (vendoring, .git 제거) | 웹 기반 토픽 시각화 — `ros2 run rosboard rosboard_node` → http://Pi_IP:8888 (deps: python3-tornado apt, simplejpeg pip --user --no-deps, psutil 있음) |
@@ -307,7 +310,7 @@ ros2 service call /r2d2/power_off      std_srvs/srv/Trigger   # 기본 거부. �
 > (하드웨어 불필요 — 미러 bin+roll=π 합성 스캔으로 방/기둥/좌우 회전을 달리고
 > 마지막 스캔의 /map 적중률을 출력. est==true 포즈 + 100% 통과 확인)
 
-* **rf2o_laser_odometry** — `/scan` 연속 스캔 매칭으로 `odom→base_link` TF + `/odom` 발행
+* **rf2o_laser_odometry** — `/scan` 연속 스캔 매칭으로 원본 `/odom_rf2o` 발행 (TF 미발행)
   - 출처: `https://github.com/MAPIRlab/rf2o_laser_odometry` (`ros2` 브랜치) vendoring
   - 로컬 패치: `package.xml` — 포닥-era 유물 삭제: `cmake_modules` build/run_depend
     제거(CMakeLists는 미사용 실측 확인), `<run_depend>` → `<exec_depend>`, `nav_msgs` 누락 보완.
@@ -323,9 +326,15 @@ ros2 service call /r2d2/power_off      std_srvs/srv/Trigger   # 기본 거부. �
        적용 후 정지 스팬: x 6.1 mm/y 8.3 mm/yaw 2.85°(25 s).
        검증 유틸: `src/r2d2_bringup/scripts/check_odom.py`(`--scan`이면 벽 섹터 동시)
   - 파라미터는 launch에 dict로 직접 주입 (`r2d2_bringup`/`r2d2_navigation`):
-    `odom_topic: /odom` (upstream 기본 `/odom_rf2o`), `init_pose_from_topic: ""`
+    `odom_topic: /odom_rf2o`, `publish_tf: false`, `init_pose_from_topic: ""`
     (upstream 기본이 `/base_pose_ground_truth` — 반드시 비워야 함), `freq: 20`
     (실측은 스캔 수신률 ≈10Hz로 출력)
+* **robot_localization EKF** — 두 RF2O 실행 경로에서 공통 사용
+  - `r2d2_bringup/config/ekf.yaml`: RF2O pose(x/y/yaw), twist(vx/yaw rate)를 입력받음
+  - `ekf_imu.yaml`: MPU6050 angular velocity z를 추가 입력. `enable_imu:=false`면
+    이 입력과 IMU 드라이버를 끄고 RF2O-only EKF로 실행
+  - EKF가 `/odom`과 `odom→base_link` TF의 유일한 발행자. SLAM은 계속 `map→odom` 소유
+  - IMU fusion 기본 ON. Pi에서 센서가 연결되지 않은 경우 `enable_imu:=false`로 실행
 * **slam_toolbox** — apt `ros-jazzy-slam-toolbox` (2.8.5, 설치 확인)
   - 매핑(bringup): `async_slam_toolbox_node`, `r2d2_bringup/config/slam_toolbox.yaml`
     (`/opt/ros`의 `mapper_params_online_async.yaml` 기반. `base_frame: base_link` —
@@ -345,8 +354,89 @@ ros2 service call /r2d2/power_off      std_srvs/srv/Trigger   # 기본 거부. �
 ### TF 트리 (구동 시)
 
 ```
-map ──(slam_toolbox)──▶ odom ──(rf2o)──▶ base_link ──(bringup static TF, x=0.18/z=0.083, 평행; 미러는 driver reverse)──▶ base_laser
+map ──(slam_toolbox)──▶ odom ──(robot_localization EKF)──▶ base_link ──(bringup static TF, x=0.18/z=0.083, 평행; 미러는 driver reverse)──▶ base_laser
 ```
+
+### EKF fusion 검증 절차
+
+EKF 프로세스가 떠 있는지만으로 융합이 잘 된다고 판단하지 않는다. 입력 연결,
+출력·TF, 센서 방향, 실제 동작을 각각 확인한다. IMU 기본 모드는 `enable_imu:=true`;
+비교 기준인 RF2O-only 모드는 `enable_imu:=false`다.
+
+#### 1) 입력 연결 및 발행률 확인
+
+bringup 또는 navigation launch를 실행한 뒤:
+
+```bash
+ros2 node info /ekf_filter_node
+ros2 param get /ekf_filter_node odom0
+ros2 param get /ekf_filter_node imu0
+ros2 param get /ekf_filter_node odom0_config
+ros2 param get /ekf_filter_node imu0_config
+
+ros2 topic hz /odom_rf2o
+ros2 topic hz /imu/mpu6050
+ros2 topic hz /odom
+```
+
+IMU ON에서는 EKF가 `/odom_rf2o`와 `/imu/mpu6050`을 구독해야 하며,
+`imu0_config`는 angular velocity z만 활성화해야 한다. IMU OFF에서는 `imu0`
+파라미터가 없고 IMU 드라이버도 실행되지 않아야 한다. `/odom`은 EKF 출력으로
+계속 발행되어야 한다. RF2O 주기는 설정된 20Hz가 아니라 실제 LiDAR scan 수신률에
+제한될 수 있다.
+
+#### 2) 값·진단·TF 확인
+
+```bash
+ros2 topic echo /imu/mpu6050 --once
+ros2 topic echo /odom_rf2o --once
+ros2 topic echo /odom --once
+ros2 topic echo /diagnostics
+ros2 run tf2_ros tf2_echo odom base_link
+```
+
+IMU의 `frame_id`와 z축 각속도 방향이 장착/REP-103 기준과 맞는지 확인한다.
+반시계 제자리 회전에서 z 각속도와 EKF yaw 변화는 양수여야 한다.
+`/odom`과 `odom → base_link` TF는 함께 갱신되어야 하며, 이 TF의 publisher는
+EKF 하나여야 한다. diagnostics에 입력 timeout 또는 stale data 경고가 반복되면
+timestamp, 토픽 주기, frame/TF 연결을 먼저 점검한다.
+
+#### 3) 저속 실물 시험
+
+장애물이 없고 비상 정지가 가능한 공간에서 낮은 속도로 시행한다.
+
+1. **정지:** 로봇을 고정하고 IMU 자이로 z 평균이 bias 보정 후 0 근처인지,
+   `/odom`의 yaw/위치가 계속 빠르게 움직이지 않는지 확인한다.
+2. **제자리 회전:** 천천히 반시계·시계 회전한다. IMU z 부호와 EKF yaw 방향이
+   맞고, RF2O pose 변화와 크게 모순되지 않아야 한다.
+3. **짧은 직진:** 실제 진행 방향과 `/odom_rf2o`, `/odom`의 x/y 변화 방향을 비교한다.
+   EKF가 입력보다 더 심하게 튀거나, 지연되거나, 반대 방향이면 정상으로 보지 않는다.
+4. **IMU ON/OFF 비교:** 같은 시작 위치에서 같은 저속 회전·직진 동작을 각각
+   `enable_imu:=true`와 `enable_imu:=false`로 실행해 기록한다. ON에서 회전 추정이
+   IMU 측정에 반응하는지 확인한다. 두 결과가 같다고 해서 곧바로 실패는 아니지만,
+   IMU 입력 구독 여부·공분산·회전 중 자이로 값을 확인한다.
+
+같은 동작을 사후 비교할 수 있도록 각 모드에서 별도 bag을 기록한다:
+
+```bash
+ros2 bag record -o /tmp/ekf_imu_on \
+  /imu/mpu6050 /odom_rf2o /odom /tf /tf_static /diagnostics
+# 다른 터미널에서 재현 동작이 끝나면 Ctrl+C
+
+# launch를 종료하고 RF2O-only로 다시 실행한 뒤 동일한 동작을 반복
+ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=false
+ros2 bag record -o /tmp/ekf_imu_off \
+  /odom_rf2o /odom /tf /tf_static /diagnostics
+```
+
+#### 해석 시 주의
+
+현재 MPU6050 축별 공분산은 측정 전 기본값 0이며, RF2O 메시지도 pose/twist
+공분산을 채우지 않는다. 따라서 입력 연결과 동작 방향은 확인할 수 있어도,
+공분산을 실측·설정하기 전에는 EKF의 가중치나 추정 정확도가 적절하다고 결론 내릴 수
+없다. IMU 공분산 후보는 정지 로그로 `analyze_imu`에서 구하고, RF2O 공분산도
+별도로 검증·설정한 후 동일한 주행 시험을 반복한다. `/odom`이 발행된다는 사실만으로
+센서 fusion 품질을 입증하지는 않는다.
 
 ### 기하 실측값 (2026-10-24)
 
@@ -360,7 +450,7 @@ map ──(slam_toolbox)──▶ odom ──(rf2o)──▶ base_link ──(br
 
 - 출처: `https://github.com/kimsniper/ros2_mpu6050` (i2c-dev C++ 드라이버 +
   **별도 캘리브레이션 유틸** 내장 — 선택 이유)
-- 시스템 의존성: `sudo apt install libi2c-dev i2c-tools` ✅ 설치 완료
+- 시스템 의존성: `sudo apt install libi2c-dev i2c-tools ros-jazzy-robot-localization`
 - 출력: `imu/mpu6050` 토픽 `sensor_msgs/Imu` (100Hz 고정 타이머,
   가속도 m/s² + 각속도 rad/s, **orientation은 무효 표시**(-1 covariance) —
   MPU6050에 지자기 센서가 없고 이 드라이버도 필터를 계산하지 않음)
@@ -384,29 +474,31 @@ map ──(slam_toolbox)──▶ odom ──(rf2o)──▶ base_link ──(br
   ```
 - 센서 미연결 시 동작(확인됨): `/dev/i2c-1` open은 성공 → device ID 검증 실패로
   `MPU6050 initialization failed!` 출력 후 프로세스는 살아있음. 연결 후 정상화
-- **imu_filter_madgwick 검토 결론: 현 구성에서는 불필요 (보류)**
-  - SLAM(rf2o + slam_toolbox)은 `/scan`만 사용 — IMU 불필요
-  - (hector 시절의 `hector_imu_attitude_to_tf` 연동은 hector 제거로 소멸.
-    이 드라이버는 orientation을 발행하지 않으므로 attitude TF가 필요해지면
-    별도 publisher를 붙여야 함)
-  - 필요해지는 시점(기울임 감시 / robot_localization EKF 등):
-    `sudo apt install ros-jazzy-imu-filter-madgwick` 후
-    `/imu/mpu6050` → `imu_filter_madgwick` → orientation 있는 `imu/data` 순으로
-    연결. MAG 없는 MPU6050 특성상 yaw는 드리프트 (roll/pitch는 accel 보정되어 실용적)
+- MPU6050은 orientation을 발행하지 않음 (`orientation_covariance[0] = -1`).
+  EKF에서는 orientation이 아닌 **z축 각속도**만 융합한다. 자력계 없는 MPU6050의
+  yaw 단독 추정은 드리프트하므로 RF2O가 위치·장기 yaw를 보정한다.
+- RF2O와 IMU 공분산은 실측 후 설정해야 한다. 진단 명령:
+  `ros2 run ros2_mpu6050 analyze_imu --duration 30 --stationary`.
+  EKF를 실제 주행에 사용하기 전에 RF2O가 발행하는 pose/twist covariance도 확인하고,
+  두 센서의 covariance를 검증할 것.
 - ⚠️ **빌드·launch 검증 완료 / MPU6050 본체 미연결 — 실물 테스트 남아있음**
 
 ## 5. 통합 — `r2d2_bringup`
 
 ```bash
-ros2 launch r2d2_bringup r2d2_bringup.launch.py                      # motor+sound+lidar+slam
+ros2 launch r2d2_bringup r2d2_bringup.launch.py                      # IMU+RF2O EKF+slam
 ros2 launch r2d2_bringup r2d2_bringup.launch.py mock:=true enable_lidar:=false
 ros2 launch r2d2_bringup r2d2_bringup.launch.py lidar_version:=4
-ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=true imu_device:=/dev/i2c-1
+ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=false     # RF2O-only EKF
 ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_sound:=false  # 효과음 노드 제외
 
 ros2 launch r2d2_bringup hector.launch.py                            # motor+lidar+hector(rf2o 없음)
 ros2 launch r2d2_bringup hector.launch.py mock:=true enable_lidar:=false
 ```
+
+`r2d2_bringup.launch.py`와 `r2d2_navigation/navigation.launch.py`의
+`enable_imu`는 기본 true이며 false로 RF2O-only EKF를 선택할 수 있다.
+hector.launch.py는 EKF를 사용하지 않고 `enable_imu`도 기본 false다.
 
 인자: `enable_motor`/`enable_lidar`/`enable_slam`/`enable_imu`/`enable_sound`(기본 true)/
 `sound_mock`, `mock`,
@@ -432,9 +524,9 @@ linorobot2_navigation 구조(launch/config/maps/rviz)를 참고하되, **차동 
 
 ```
 r2d2_navigation/
-├── config/nav2_params.yaml             # nav2 1.3.13 — odom 프레임 반영 (rf2o 이후)
+├── config/nav2_params.yaml             # nav2 1.3.13 — fused EKF odom 프레임 반영
 ├── config/slam_toolbox_localization.yaml  # localization 모드 (posegraph 로드)
-├── launch/navigation.launch.py         # motor+lidar+rf2o+slam_toolbox(loc)+nav2 core
+├── launch/navigation.launch.py         # motor+lidar+RF2O/IMU EKF+slam_toolbox(loc)+nav2 core
 ├── maps/                               # save_map.sh 출력 (posegraph+pgm/yaml, git 추적)
 ├── rviz/nav2_config.rviz
 └── scripts/save_map.sh                 # serialize_map + map_saver_cli
@@ -447,7 +539,7 @@ r2d2_navigation/
 | 모션 | `r2d2_motor mapping_mode:=tank` | MCU (power, angle) = (v, ω) 극좌표 (운영자 확인, SE q18048) — **wheelbase 정규화**: w_t=ω·L/2 (L=0.235 m 실측) 기준으로 v와 같은 m/s 단위 혼합 (§1b, 2026-10-26 발산 교정) |
 | 컨트롤러 | MPPI `motion_model: DiffDrive` (vx_max 0.15, wz_max 0.4 test) | 실측 top speed 0.167 m/s @ power100 (벤치 2026-10-26) — 구 vx_max 0.25/0.5는 물리 불가 가정. 기본 critics 전체 유효 |
 | 플래너 | NavFn | diff 로봇 표준, 경로에 heading 포함 |
-| 위치추정 | **rf2o(odom→base_link) + slam_toolbox localization(map→odom)** | wheel odom 없음 → scan 기반 레이저 odom. nav2 표준 TF 체인이 완성되어 local costmap(odom)/velocity_smoother(/odom)/MPPI가 정상 동작 |
+| 위치추정 | **robot_localization EKF(odom→base_link) + slam_toolbox localization(map→odom)** | RF2O scan odom과 MPU6050 gyro z를 융합 (IMU 기본 ON, `enable_imu:=false`로 RF2O-only 가능). nav2의 `/odom` 및 표준 TF 체인을 제공 |
 | 자기위치 보정 | RViz **2D Pose Estimate** → `/initialpose` (slam_toolbox 네이티브) | 출발 기본값 `map_start_pose: [0,0,0]` (매핑 시작 지점), 어딘가에 출발하면 클릭으로 보정 |
 | 지도 | 기본: slam_toolbox가 posegraph 로드 후 `/map` 직접 발행. hector 지도용 대안: `localization:=map_server`(map_server+AMCL, pgm/yaml 로드) | slam_toolbox 저장: `save_map.sh` → posegraph+pgm/yaml. hector 저장: `SKIP_POSEGRAPH=1 save_map.sh` → pgm/yaml뿐 |
 | goal checker | xy 0.15 / **yaw 0.25** (회전 유효) | — |
@@ -470,6 +562,8 @@ colcon build --packages-select r2d2_navigation
 # 3) 내비: posegraph 로드 + localization(자기위치) + nav2 core
 ros2 launch r2d2_navigation navigation.launch.py \
     posegraph:=$(ros2 pkg prefix r2d2_navigation)/share/r2d2_navigation/maps/r2d2_home_posegraph
+# IMU 미연결/비활성 시에도 RF2O-only EKF로 주행:
+ros2 launch r2d2_navigation navigation.launch.py enable_imu:=false
 #    원격 RViz: ros2 launch r2d2_bringup remote.launch.py \
 #        rviz_config:=$(ros2 pkg prefix r2d2_navigation)/share/r2d2_navigation/rviz/nav2_config.rviz
 #    ① 2D Pose Estimate로 실제 위치 지정 → ② 2D Goal Pose로 목표 발행
@@ -501,7 +595,7 @@ ros2 launch r2d2_navigation navigation.launch.py localization:=map_server \
 #    원격 RViz/2D Pose Estimate/Goal 사용법은 위 slam_toolbox 워크플로와 동일
 ```
 
-- AMCL은 `/odom`(rf2o)으로 예측하고 `/scan`으로 입자를 갱신 — 파라미터는
+- AMCL은 `/odom`(EKF 융합 odom)으로 예측하고 `/scan`으로 입자를 갱신 — 파라미터는
   `nav2_params.yaml`의 `amcl:`/`map_server:` 블록(jazzy 기본 + COIN 0.05–12m,
   slow-walker `update_min_d/a` 0.2/0.15). rf2o는 여전히 필요하므로
   `enable_slam_loc:=false`로 내리면 안 된다.

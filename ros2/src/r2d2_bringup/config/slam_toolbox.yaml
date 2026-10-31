@@ -2,7 +2,7 @@
 # Base template: /opt/ros/jazzy/share/slam_toolbox/config/mapper_params_online_async.yaml
 # R2-D2 specifics:
 #   * base_frame base_link (there is NO base_footprint frame in this robot)
-#   * odom->base_link TF is published by rf2o_laser_odometry; slam_toolbox owns map->odom
+#   * odom->base_link TF is published by robot_localization; slam_toolbox owns map->odom
 #   * resolution 0.05 + slow-walker update thresholds inherited from hector_slam.yaml
 #   * laser ranges match the COIN-D3 (0.05..12 m)
 slam_toolbox:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live /odom monitor for the Neo-R2D2 rf2o bringup.
+"""Live /odom monitor for the Neo-R2D2 fused RF2O/IMU bringup.
 
 Run (after `source install/setup.bash`, bringup or navigation up):
     python3 src/r2d2_bringup/scripts/check_odom.py            # odom only
