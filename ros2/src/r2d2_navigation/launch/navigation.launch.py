@@ -134,6 +134,9 @@ def generate_launch_description():
                               description="frame_id of the IMU messages"),
         DeclareLaunchArgument("enable_nav2", default_value="true",
                               description="nav2 servers (requires ros-jazzy-navigation2)"),
+        DeclareLaunchArgument("controller", default_value="rpp",
+                              description="Nav2 path controller: rpp (default) or mppi",
+                              choices=["rpp", "mppi"]),
         DeclareLaunchArgument("params_file",
                               default_value=os.path.join(nav_share, "config", "nav2_params.yaml")),
         DeclareLaunchArgument("use_sim_time", default_value="false"),
@@ -248,6 +251,12 @@ def generate_launch_description():
         root_key="",
         param_rewrites={
             "use_sim_time": LaunchConfiguration("use_sim_time"),
+            "controller_server.ros__parameters.FollowPath.plugin": PythonExpression([
+                "'nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController' "
+                "if '", LaunchConfiguration("controller"),
+                "' == 'rpp' else "
+                "'nav2_mppi_controller::MPPIController'",
+            ]),
         },
         convert_types=True,
     )

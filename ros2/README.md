@@ -537,7 +537,7 @@ r2d2_navigation/
 | 계층 | 선택 | 이유 |
 |---|---|---|
 | 모션 | `r2d2_motor mapping_mode:=tank` | MCU (power, angle) = (v, ω) 극좌표 (운영자 확인, SE q18048) — **wheelbase 정규화**: w_t=ω·L/2 (L=0.235 m 실측) 기준으로 v와 같은 m/s 단위 혼합 (§1b, 2026-10-26 발산 교정) |
-| 컨트롤러 | MPPI `motion_model: DiffDrive` (vx_max 0.15, wz_max 0.4 test) | 실측 top speed 0.167 m/s @ power100 (벤치 2026-10-26) — 구 vx_max 0.25/0.5는 물리 불가 가정. 기본 critics 전체 유효 |
+| 컨트롤러 | RPP 기본 (`controller:=rpp`), MPPI 대안 (`controller:=mppi`) | RPP는 `linear.x/angular.z` 경로 추종 + 회전/장애물 속도 조절 사용. 저속 시작값(0.12 m/s); 실물 검증 전 보수적으로 시험 |
 | 플래너 | NavFn | diff 로봇 표준, 경로에 heading 포함 |
 | 위치추정 | **robot_localization EKF(odom→base_link) + slam_toolbox localization(map→odom)** | RF2O scan odom과 MPU6050 gyro z를 융합 (IMU 기본 ON, `enable_imu:=false`로 RF2O-only 가능). nav2의 `/odom` 및 표준 TF 체인을 제공 |
 | 자기위치 보정 | RViz **2D Pose Estimate** → `/initialpose` (slam_toolbox 네이티브) | 출발 기본값 `map_start_pose: [0,0,0]` (매핑 시작 지점), 어딘가에 출발하면 클릭으로 보정 |
@@ -564,6 +564,10 @@ ros2 launch r2d2_navigation navigation.launch.py \
     posegraph:=$(ros2 pkg prefix r2d2_navigation)/share/r2d2_navigation/maps/r2d2_home_posegraph
 # IMU 미연결/비활성 시에도 RF2O-only EKF로 주행:
 ros2 launch r2d2_navigation navigation.launch.py enable_imu:=false
+# 기본 RPP 컨트롤러를 명시해 실행 (기본값):
+ros2 launch r2d2_navigation navigation.launch.py controller:=rpp
+# 기존 MPPI 컨트롤러로 비교:
+ros2 launch r2d2_navigation navigation.launch.py controller:=mppi
 #    원격 RViz: ros2 launch r2d2_bringup remote.launch.py \
 #        rviz_config:=$(ros2 pkg prefix r2d2_navigation)/share/r2d2_navigation/rviz/nav2_config.rviz
 #    ① 2D Pose Estimate로 실제 위치 지정 → ② 2D Goal Pose로 목표 발행
@@ -609,8 +613,9 @@ ros2 launch r2d2_navigation navigation.launch.py localization:=map_server \
   map→base_link와 rf2o의 odom→base_link가 base_link 이중 부모가 된다.
 
 ### 검증 상태 (nav2)
-- 1.3.13 파라미터 실측 통과: SmacPlanner→NavFn 교체, MPPI DiffDrive,
-  NavigateToPoseNavigator, behavior spin복원, 전 서버 configure (headless)
+- 1.3.13 기존 headless 검증: SmacPlanner→NavFn 교체, MPPI DiffDrive,
+  NavigateToPoseNavigator, behavior spin복원, 전 서버 configure
+- RPP 기본 선택과 MPPI 선택 launch 옵션 구성 완료; RPP headless/실물 구동 검증은 미완료
 - ✅ 2026-10-19 (rf2o+toolbox 전환): LiDAR+모의 원운동 odom TF로 매핑→serialize→
   navigation localization 로드까지 headless e2e 통과 — `/odom` ~10Hz,
   `map→base_link` TF, `/map`(123×102 grid) 발행
@@ -801,7 +806,7 @@ source install/setup.bash
 | config 반영(ttyAMA0) | ✅ `config_local.json` 자동 로드, 파라미터 오버라이드 확인 |
 | 전체 패키지 빌드 | ✅ 0 failures (Pi5, Jazzy, nav2 1.3.13) |
 | bringup 기동 | ✅ motor(mock)+LiDAR+rf2o+slam_toolbox — `/odom` 10Hz, `/map`+TF 체인 실동작 (2026-10-19, hector 제거 후) |
-| nav2 스택 headless 검증 | ✅ NavFn/MPPI-DiffDrive/BT(기본 트리)/behavior/velocity_smoother 전 서버 configure (mock). localization 로드 e2e: posegraph→`map→base_link` TF 확인 |
+| nav2 스택 headless 검증 | ✅ 기존 NavFn/MPPI-DiffDrive/BT(기본 트리)/behavior/velocity_smoother 전 서버 configure (mock). localization 로드 e2e: posegraph→`map→base_link` TF 확인; RPP 선택 검증은 미완료 |
 | nav2 실물 e2e | ⬜ MCU 연결 후 주행 (§6 검증 상태) |
 | LiDAR 실물 (COIN-D3) | ✅ coin_d4_driver 스캔 수신 확인 (/dev/ttyAMA1) |
 | MCU 실물 UART | ⬜ 미검증 |
