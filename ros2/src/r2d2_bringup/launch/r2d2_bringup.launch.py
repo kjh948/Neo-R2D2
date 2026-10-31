@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Neo-R2D2 bringup: motor/MCU bridge + sound + COIN lidar + rf2o odometry + slam_toolbox.
+"""Neo-R2D2 bringup: motor/MCU bridge + sound + COIN lidar + fused odometry + slam_toolbox.
 
     ros2 launch r2d2_bringup r2d2_bringup.launch.py
     ros2 launch r2d2_bringup r2d2_bringup.launch.py mock:=true          # UART 없이 구동 확인
     ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_lidar:=false
     ros2 launch r2d2_bringup r2d2_bringup.launch.py lidar_version:=3    # coin_d4_driver version param
-    ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=true imu_device:=/dev/i2c-1
+    ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_imu:=false
     ros2 launch r2d2_bringup r2d2_bringup.launch.py enable_sound:=false # 효과음 노드 제외
 
 Components (all individually switchable):
@@ -25,10 +25,11 @@ Components (all individually switchable):
                 every consumer that applies the TF (slam_toolbox, RViz). One
                 mirror flip only: remount right-side-up -> laser_tf_roll:=0.0,
                 or set lidar_reverse:=true together with roll:=0.0.
-* rf2o_laser_odometry — /scan -> /odom + odom->base_link TF (the robot has no
-*                wheel odometry; this is the only odom source).
+* rf2o_laser_odometry — /scan -> /odom_rf2o (raw scan-matching odometry).
+* robot_localization — fuses RF2O with MPU6050 gyro z when enabled; publishes
+                /odom + odom->base_link TF. RF2O does not publish TF.
 * slam_toolbox — async SLAM, config/slam_toolbox.yaml; owns map->odom.
-                TF chain: map ->(slam_toolbox)-> odom ->(rf2o)-> base_link ->(static)-> base_laser.
+                TF chain: map ->(slam_toolbox)-> odom ->(EKF)-> base_link ->(static)-> base_laser.
 """
 import math
 import os
@@ -40,7 +41,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -73,7 +74,8 @@ def generate_launch_description():
     lidar_share = get_package_share_directory("coin_d4_driver")
     bringup_share = get_package_share_directory("r2d2_bringup")
     _guard_against_stale_session(
-        ["slam_toolbox", "rf2o_laser_odometry", "lidar_node", "r2d2_motor", "r2d2_sound"])
+        ["slam_toolbox", "rf2o_laser_odometry", "ekf_filter_node",
+         "mpu6050_sensor", "lidar_node", "r2d2_motor", "r2d2_sound"])
     try:
         imu_share = get_package_share_directory("ros2_mpu6050")
     except PackageNotFoundError:  # driver not built in this workspace
@@ -115,8 +117,9 @@ def generate_launch_description():
                               default_value=os.path.join(bringup_share, "config", "slam_toolbox.yaml")),
         DeclareLaunchArgument("rf2o_freq", default_value="20.0",
                               description="rf2o laser odometry output rate [Hz]"),
-        DeclareLaunchArgument("enable_imu", default_value="false",
-                              description="start the MPU6050 driver (publishes imu/mpu6050)"),
+        DeclareLaunchArgument("enable_imu", default_value="true",
+                              description="fuse MPU6050 gyro z in the EKF and start its driver; "
+                                          "false runs RF2O-only EKF"),
         DeclareLaunchArgument("imu_device", default_value="/dev/i2c-1",
                               description="MPU6050 I2C device"),
         DeclareLaunchArgument("imu_frame", default_value="base_link",
@@ -179,16 +182,27 @@ def generate_launch_description():
     }]
     if imu_share:
         imu_params.insert(0, os.path.join(imu_share, "config", "params.yaml"))
+    imu_enabled = PythonExpression([
+        "'", LaunchConfiguration("enable_imu"), "' == 'true' and '",
+        str(bool(imu_share)).lower(), "' == 'true'"])
+    ekf_imu_enabled = PythonExpression([
+        "'", LaunchConfiguration("enable_slam"), "' == 'true' and '",
+        LaunchConfiguration("enable_imu"), "' == 'true' and '",
+        str(bool(imu_share)).lower(), "' == 'true'"])
+    ekf_no_imu_enabled = PythonExpression([
+        "'", LaunchConfiguration("enable_slam"), "' == 'true' and ('",
+        LaunchConfiguration("enable_imu"), "' != 'true' or '",
+        str(bool(imu_share)).lower(), "' != 'true')"])
     imu = Node(
         package="ros2_mpu6050",
         executable="ros2_mpu6050",
         name="mpu6050_sensor",
         output="screen",
         parameters=imu_params,
-        condition=IfCondition(LaunchConfiguration("enable_imu")),
+        condition=IfCondition(imu_enabled),
     )
 
-    # --- laser odometry (rf2o): /scan -> /odom + odom->base_link TF -----------------
+    # --- laser odometry (rf2o): /scan -> raw /odom_rf2o, no TF ----------------------
     rf2o = Node(
         package="rf2o_laser_odometry",
         executable="rf2o_laser_odometry_node",
@@ -196,14 +210,35 @@ def generate_launch_description():
         output="screen",
         parameters=[{
             "laser_scan_topic": "/scan",
-            "odom_topic": "/odom",
+            "odom_topic": "/odom_rf2o",
             "base_frame_id": "base_link",
             "odom_frame_id": "odom",
-            "publish_tf": True,
+            "publish_tf": False,
             "init_pose_from_topic": "",  # upstream default /base_pose_ground_truth!
             "freq": ParameterValue(LaunchConfiguration("rf2o_freq"), value_type=float),
         }],
         condition=IfCondition(LaunchConfiguration("enable_slam")),
+    )
+
+    ekf_common = os.path.join(bringup_share, "config", "ekf.yaml")
+    ekf_imu = os.path.join(bringup_share, "config", "ekf_imu.yaml")
+    ekf_with_imu = Node(
+        package="robot_localization",
+        executable="ekf_node",
+        name="ekf_filter_node",
+        output="screen",
+        parameters=[ekf_common, ekf_imu],
+        remappings=[("odometry/filtered", "/odom")],
+        condition=IfCondition(ekf_imu_enabled),
+    )
+    ekf_without_imu = Node(
+        package="robot_localization",
+        executable="ekf_node",
+        name="ekf_filter_node",
+        output="screen",
+        parameters=[ekf_common],
+        remappings=[("odometry/filtered", "/odom")],
+        condition=IfCondition(ekf_no_imu_enabled),
     )
 
     # --- slam_toolbox (async mapping): scan+odom -> /map, map->odom TF --------------
@@ -245,5 +280,5 @@ def generate_launch_description():
         components.append(LogInfo(
             condition=IfCondition(LaunchConfiguration("enable_sound")),
             msg="[r2d2_bringup] r2d2_sound is not built; colcon build it to enable effects"))
-    components.extend([rf2o, slam, slam_lifecycle])
+    components.extend([rf2o, ekf_with_imu, ekf_without_imu, slam, slam_lifecycle])
     return LaunchDescription(args + components)

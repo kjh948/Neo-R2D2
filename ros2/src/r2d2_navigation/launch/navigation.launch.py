@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Neo-R2D2 navigation: sensors + rf2o odometry + localization + Nav2.
+"""Neo-R2D2 navigation: sensors + RF2O/IMU EKF odometry + localization + Nav2.
 
     # slam_toolbox mode (default): localize against a serialized posegraph
     ros2 launch r2d2_navigation navigation.launch.py posegraph:=<abs>/maps/r2d2_home_posegraph
@@ -15,8 +15,8 @@
 Architecture (differs from linorobot2 deliberately):
   * r2d2_motor runs with mapping_mode:=tank (nav2 Twist (vx, wz) -> MCU
     polar power/angle, the operator-confirmed differential kinematics)
-  * NO wheel odom: rf2o_laser_odometry provides /odom + odom->base_link TF
-    from the scan in BOTH localization modes.
+  * NO wheel odom: rf2o publishes raw /odom_rf2o; robot_localization fuses
+    RF2O and (optionally) MPU6050 gyro z to publish /odom + odom->base_link.
   * localization:=toolbox  — slam_toolbox (mode: localization) localizes the
     serialized posegraph and owns map->odom; it publishes /map itself.
   * localization:=map_server — map_server loads the saved pgm and AMCL owns
@@ -27,15 +27,17 @@ Architecture (differs from linorobot2 deliberately):
     natively by both engines).
 
 nav2 core (planner/controller/bt/smoother/lifecycle) starts only when Nav2 is
-installed; enable_nav2:=false brings up just motor + lidar + rf2o + localization.
+installed; enable_nav2:=false brings up motor + sensors + fused odometry +
+localization.
 """
 import math
 import os
 import subprocess
 
+from ament_index_python import PackageNotFoundError
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
@@ -64,18 +66,34 @@ def _guard_against_stale_session(node_names):
 
 def generate_launch_description():
     nav_share = get_package_share_directory("r2d2_navigation")
+    bringup_share = get_package_share_directory("r2d2_bringup")
     motor_share = get_package_share_directory("r2d2_motor")
     lidar_share = get_package_share_directory("coin_d4_driver")
+    try:
+        imu_share = get_package_share_directory("ros2_mpu6050")
+    except PackageNotFoundError:
+        imu_share = ""
+    imu_enabled = PythonExpression([
+        "'", LaunchConfiguration("enable_imu"), "' == 'true' and '",
+        str(bool(imu_share)).lower(), "' == 'true'"])
+    ekf_imu_enabled = PythonExpression([
+        "'", LaunchConfiguration("enable_slam_loc"), "' == 'true' and '",
+        LaunchConfiguration("enable_imu"), "' == 'true' and '",
+        str(bool(imu_share)).lower(), "' == 'true'"])
+    ekf_no_imu_enabled = PythonExpression([
+        "'", LaunchConfiguration("enable_slam_loc"), "' == 'true' and ('",
+        LaunchConfiguration("enable_imu"), "' != 'true' or '",
+        str(bool(imu_share)).lower(), "' != 'true')"])
     # hector_mapping too: a leftover hector session would publish map->base_link
-    # while rf2o owns odom->base_link here -> base_link gets two TF parents.
+    # while the EKF owns odom->base_link here -> base_link gets two TF parents.
     _guard_against_stale_session(
         ["lidar_node", "r2d2_motor", "slam_toolbox", "rf2o_laser_odometry",
-         "hector_mapping"])
+         "ekf_filter_node", "mpu6050_sensor", "hector_mapping"])
 
     default_posegraph = os.path.join(nav_share, "maps", "r2d2_home_posegraph")
 
     # localization:=toolbox|map_server — one engine at a time, both behind the
-    # same enable_slam_loc switch (rf2o feeds odom->base_link in either mode).
+    # same enable_slam_loc switch (the EKF feeds odom->base_link in either mode).
     cond_toolbox = IfCondition(PythonExpression([
         "'", LaunchConfiguration("enable_slam_loc"), "' == 'true' and '",
         LaunchConfiguration("localization"), "' == 'toolbox'"]))
@@ -105,8 +123,15 @@ def generate_launch_description():
                                           "for the current upside-down mount (true double-"
                                           "mirrors and reverses rf2o odom; see r2d2_bringup)"),
         DeclareLaunchArgument("enable_slam_loc", default_value="true",
-                              description="rf2o odom + the selected localization engine "
-                                          "(map->odom TF); keep true on hardware"),
+                              description="RF2O + EKF odometry and the selected localization "
+                                          "engine (map->odom TF); keep true on hardware"),
+        DeclareLaunchArgument("enable_imu", default_value="true",
+                              description="fuse MPU6050 gyro z in the EKF; false runs "
+                                          "RF2O-only EKF"),
+        DeclareLaunchArgument("imu_device", default_value="/dev/i2c-1",
+                              description="MPU6050 I2C device"),
+        DeclareLaunchArgument("imu_frame", default_value="base_link",
+                              description="frame_id of the IMU messages"),
         DeclareLaunchArgument("enable_nav2", default_value="true",
                               description="nav2 servers (requires ros-jazzy-navigation2)"),
         DeclareLaunchArgument("params_file",
@@ -159,7 +184,7 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("enable_lidar")),
     )
 
-    # --- laser odometry (same node/params as r2d2_bringup) ------------------------
+    # --- raw RF2O odometry (EKF is the sole odom TF publisher) ---------------------
     rf2o = Node(
         package="rf2o_laser_odometry",
         executable="rf2o_laser_odometry_node",
@@ -167,14 +192,54 @@ def generate_launch_description():
         output="screen",
         parameters=[{
             "laser_scan_topic": "/scan",
-            "odom_topic": "/odom",
+            "odom_topic": "/odom_rf2o",
             "base_frame_id": "base_link",
             "odom_frame_id": "odom",
-            "publish_tf": True,
+            "publish_tf": False,
             "init_pose_from_topic": "",  # upstream default /base_pose_ground_truth!
             "freq": 20.0,
         }],
         condition=IfCondition(LaunchConfiguration("enable_slam_loc")),
+    )
+
+    imu_params = [{
+        "device": LaunchConfiguration("imu_device"),
+        "imu_frame": LaunchConfiguration("imu_frame"),
+    }]
+    if imu_share:
+        imu_params.insert(0, os.path.join(imu_share, "config", "params.yaml"))
+    imu = Node(
+        package="ros2_mpu6050",
+        executable="ros2_mpu6050",
+        name="mpu6050_sensor",
+        output="screen",
+        parameters=imu_params,
+        condition=IfCondition(imu_enabled),
+    )
+
+    ekf_common = os.path.join(bringup_share, "config", "ekf.yaml")
+    ekf_imu = os.path.join(bringup_share, "config", "ekf_imu.yaml")
+    ekf_with_imu = Node(
+        package="robot_localization",
+        executable="ekf_node",
+        name="ekf_filter_node",
+        output="screen",
+        parameters=[ekf_common, ekf_imu, {
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+        }],
+        remappings=[("odometry/filtered", "/odom")],
+        condition=IfCondition(ekf_imu_enabled),
+    )
+    ekf_without_imu = Node(
+        package="robot_localization",
+        executable="ekf_node",
+        name="ekf_filter_node",
+        output="screen",
+        parameters=[ekf_common, {
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+        }],
+        remappings=[("odometry/filtered", "/odom")],
+        condition=IfCondition(ekf_no_imu_enabled),
     )
 
     # Shared nav2 parameter file (used by map_server/AMCL below and nav2 core).
@@ -294,9 +359,17 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("enable_nav2")),
     )
 
-    return LaunchDescription(args + [
-        motor, lidar, laser_tf, rf2o, slam_loc, slam_lifecycle,
+    components = [
+        motor, lidar, laser_tf, rf2o, ekf_with_imu, ekf_without_imu,
+        slam_loc, slam_lifecycle,
         map_server, amcl, map_lifecycle,
         planner, controller, smoother, behavior_server, bt_navigator,
         velocity_smoother, lifecycle_manager,
-    ])
+    ]
+    if imu_share:
+        components.append(imu)
+    else:
+        components.append(LogInfo(
+            condition=IfCondition(LaunchConfiguration("enable_imu")),
+            msg="[r2d2_navigation] ros2_mpu6050 is not built; EKF will run without IMU data"))
+    return LaunchDescription(args + components)

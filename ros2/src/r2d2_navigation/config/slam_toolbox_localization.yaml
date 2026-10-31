@@ -4,7 +4,7 @@
 # use_sim_time through RewrittenYaml, so keep those keys present here.
 #   * localizes against a serialized posegraph saved by save_map.sh in a bringup
 #     mapping session; publishes map->odom TF and /map.
-#   * odom->base_link comes from rf2o_laser_odometry (same node as bringup).
+#   * odom->base_link comes from robot_localization (same EKF as bringup).
 slam_toolbox:
   ros__parameters:
 

@@ -3,7 +3,7 @@
 <package format="3">
   <name>r2d2_bringup</name>
   <version>0.1.0</version>
-  <description>Bringup launch for Neo-R2D2: motor node, COIN lidar, rf2o odometry + slam_toolbox or hector_slam.</description>
+  <description>Neo-R2D2 bringup with motor, COIN lidar, RF2O/IMU EKF odometry, and SLAM.</description>
   <maintainer email="kjh948@example.com">kjh948</maintainer>
   <license>MIT</license>
 
@@ -12,6 +12,7 @@
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>ros2_mpu6050</exec_depend>
   <exec_depend>rf2o_laser_odometry</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>hector_mapping</exec_depend>
   <exec_depend>r2d2_sound</exec_depend>
