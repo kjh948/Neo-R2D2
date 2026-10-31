@@ -126,7 +126,7 @@ controller_server:
       inflation_cost_scaling_factor: 5.0
       use_rotate_to_heading: true
       rotate_to_heading_angular_vel: 0.4
-      max_angular_accel: 1.0
+      max_angular_accel: 0.1
       rotate_to_heading_min_angle: 0.785
       allow_reversing: false
       use_collision_detection: true
@@ -149,7 +149,7 @@ controller_server:
       # the cmd_vel_nav angular divergence at low-vx/high-wz combos is a real
       # MCU polar-kinematics overshoot (robot physically spins more than
       # commanded) rather than rf2o estimate runaway. Restore 0.8 if B is ruled out.
-      wz_max: 0.4
+      wz_max: 0.2
       vx_std: 0.06    # scaled to the real 0.15 m/s envelope (was 0.15 @ 0.25 cmd)
       wz_std: 0.4
       ax_max: 0.15
@@ -237,8 +237,8 @@ velocity_smoother:
                                         # vx = measured full-power speed (0.167); hard
                                         # clip above what the MCU can ever execute
     min_velocity: [-0.15, 0.0, -0.8]
-    max_accel: [0.5, 0.0, 1.0]
-    max_decel: [-0.5, 0.0, -1.0]
+    max_accel: [0.5, 0.0, 0.5]
+    max_decel: [-0.5, 0.0, -0.5]
     odom_topic: /odom          # robot_localization publishes the fused odometry
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]
@@ -272,7 +272,7 @@ global_costmap:
           min_obstacle_height: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        inflation_radius: 0.55
+        inflation_radius: 0.25
         cost_scaling_factor: 5.0
       always_send_full_costmap: True
 
@@ -306,5 +306,5 @@ local_costmap:
           min_obstacle_height: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        inflation_radius: 0.45
+        inflation_radius: 0.25
         cost_scaling_factor: 5.0

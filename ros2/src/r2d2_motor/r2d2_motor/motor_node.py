@@ -85,10 +85,10 @@ class MotorNode(Node):
         # Bench-calibrated execution gains (2026-10-26): v = fwd_gain*P + 0.0145,
         # omega(in-place) = rot_gain*P. Re-measure after floor/battery/motor changes.
         self.declare_parameter("forward_gain", 0.001525)
-        self.declare_parameter("rotation_gain", 0.00797)
+        self.declare_parameter("rotation_gain", 0.01)
         self.declare_parameter("mapping_mode", "differential")
         self.declare_parameter("cmd_vel_timeout", 0.5)
-        self.declare_parameter("repeat_period", 0.3)
+        self.declare_parameter("repeat_period", 0.1)
         self.declare_parameter("gin_period", 5.0)
         # -- MCU bridge (see module docstring) --------------------------------
         self.declare_parameter("allow_power_off", False)

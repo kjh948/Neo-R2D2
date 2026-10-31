@@ -33,7 +33,7 @@ class MoveMapping:
     max_angular_velocity: float = 1.0  # rad/s -> power 100, only used by the
                                        # 4-direction twist_to_move teleop mode
     deadband: float = 0.02             # |normalised twist| below this counts as zero
-    min_power: int = 1                 # lowest non-zero power to send (tunable)
+    min_power: int = 0.05                 # lowest non-zero power to send (tunable)
     invert_strafe: bool = False        # flip if +angular.z strafes the wrong way
     wheel_separation: float = 0.235    # [m] physical track width (reference only —
                                        # tank_to_move uses the bench gains below)
@@ -45,7 +45,7 @@ class MoveMapping:
     # m*s/rad (vs the physical L/2 = 0.1175) for the polar angle AND power to
     # come out right. Re-bench after floor/battery/motor changes.
     forward_gain: float = 0.001525     # (m/s) per power unit
-    rotation_gain: float = 0.00797     # (rad/s) per power unit
+    rotation_gain: float = 0.01     # (rad/s) per power unit
 
 
 def twist_to_move(linear_x: float, angular_z: float, mapping: MoveMapping) -> tuple:
@@ -112,7 +112,7 @@ def tank_to_move(linear_x: float, angular_z: float, mapping: MoveMapping) -> tup
         power  = hypot(v_term, w_term) / (forward_gain * 100) * 100
 
     The gains are per-power-unit execution slopes: v = 0.001525*P + 0.0145,
-    omega = 0.00797*P (in-place, legs scrub ~5x more per rad than per m).
+    omega = 0.01*P (in-place, legs scrub ~5x more per rad than per m).
     Spot checks against the bench: (0, 0.3) -> P=38 -> omega=0.30 rad/s;
     (0.15, 0) -> P=98 -> v=0.164; (0.1, 0) -> P=66 -> v=0.115.
 
