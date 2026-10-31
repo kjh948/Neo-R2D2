@@ -202,6 +202,7 @@ def generate_launch_description():
             "init_pose_from_topic": "",  # upstream default /base_pose_ground_truth!
             "freq": 20.0,
         }],
+        arguments=["--ros-args", "--log-level", "WARN"],
         condition=IfCondition(LaunchConfiguration("enable_slam_loc")),
     )
 

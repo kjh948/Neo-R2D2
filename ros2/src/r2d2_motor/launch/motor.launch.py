@@ -44,7 +44,7 @@ def generate_launch_description() -> LaunchDescription:
                               description="bench-calibrated: in-place omega [rad/s] = rotation_gain*power"),
         DeclareLaunchArgument("cmd_vel_timeout", default_value="0.5",
                               description="Seconds without a Twist before an automatic stop"),
-        DeclareLaunchArgument("repeat_period", default_value="0.3",
+        DeclareLaunchArgument("repeat_period", default_value="0.1",
                               description="Seconds between repeated move frames while driving"),
         DeclareLaunchArgument("invert_strafe", default_value="true",
                               description="Hardware truth (2026-10-18): +angular.z made the "
