@@ -18,6 +18,12 @@ Mpu6050Node::Mpu6050Node(const std::string& name)
     this->declare_parameter<int>("accel_afs_sel", 0);
     this->declare_parameter<int>("dlpf_cfg", 0);
     this->declare_parameter<int>("clock_src", 0);
+    this->declare_parameter<double>("gyro_x_variance", 1.0e-4);
+    this->declare_parameter<double>("gyro_y_variance", 1.0e-4);
+    this->declare_parameter<double>("gyro_z_variance", 2.0e-4);
+    this->declare_parameter<double>("accel_x_variance", 1.0e-3);
+    this->declare_parameter<double>("accel_y_variance", 1.0e-3);
+    this->declare_parameter<double>("accel_z_variance", 1.5e-3);
     this->declare_parameter<double>("gyro_x_offset", 0.0);
     this->declare_parameter<double>("gyro_y_offset", 0.0);
     this->declare_parameter<double>("gyro_z_offset", 0.0);
@@ -32,6 +38,12 @@ Mpu6050Node::Mpu6050Node(const std::string& name)
     accel_x_offset_ = this->get_parameter("accel_x_offset").as_double();
     accel_y_offset_ = this->get_parameter("accel_y_offset").as_double();
     accel_z_offset_ = this->get_parameter("accel_z_offset").as_double();
+    gyro_x_variance_ = this->get_parameter("gyro_x_variance").as_double();
+    gyro_y_variance_ = this->get_parameter("gyro_y_variance").as_double();
+    gyro_z_variance_ = this->get_parameter("gyro_z_variance").as_double();
+    accel_x_variance_ = this->get_parameter("accel_x_variance").as_double();
+    accel_y_variance_ = this->get_parameter("accel_y_variance").as_double();
+    accel_z_variance_ = this->get_parameter("accel_z_variance").as_double();
 
     mpu6050_dev_ = std::make_unique<Mpu6050>(this->get_parameter("device").as_string(),
                                              this->get_parameter("i2c_address").as_int());
@@ -53,7 +65,10 @@ void Mpu6050Node::ImuPubCallback()
     auto message = sensor_msgs::msg::Imu();
     message.header.stamp = this->get_clock()->now();
     message.header.frame_id = imu_frame_;
-    message.linear_acceleration_covariance = {0};
+    message.linear_acceleration_covariance = {
+        accel_x_variance_, 0.0, 0.0,
+        0.0, accel_y_variance_, 0.0,
+        0.0, 0.0, accel_z_variance_};
 
     /* Read IMU data */
     Mpu6050::Mpu6050_AccelData_t AccelData;
@@ -65,7 +80,10 @@ void Mpu6050Node::ImuPubCallback()
     message.linear_acceleration.x = AccelData.Accel_X - accel_x_offset_;
     message.linear_acceleration.y = AccelData.Accel_Y - accel_y_offset_;
     message.linear_acceleration.z = AccelData.Accel_Z - accel_z_offset_;
-    message.angular_velocity_covariance[0] = {0};
+    message.angular_velocity_covariance = {
+        gyro_x_variance_, 0.0, 0.0,
+        0.0, gyro_y_variance_, 0.0,
+        0.0, 0.0, gyro_z_variance_};
     message.angular_velocity.x = (GyroData.Gyro_X - gyro_x_offset_) * (M_PI / 180.0);
     message.angular_velocity.y = (GyroData.Gyro_Y - gyro_y_offset_) * (M_PI / 180.0);
     message.angular_velocity.z = (GyroData.Gyro_Z - gyro_z_offset_) * (M_PI / 180.0);
