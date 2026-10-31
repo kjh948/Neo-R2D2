@@ -46,6 +46,37 @@ ros2 launch r2d2_navigation navigation.launch.py controller:=mppi
 ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r /cmd_vel:=/cmd_vel_nav
 ```
 
+### YOLO 사람 추적 (head follow + 제자리 회전)
+
+`r2d2_app`의 tracker는 `/yolo/tracking`에서 사람 하나를 선택해 track ID를
+유지하고, `/r2d2/head_shift`로 head를 따라 움직입니다. Head가 한계에 닿으면
+`/cmd_vel`에 angular.z만 보내 베이스를 제자리 회전시켜 head를 중앙 범위로
+되돌립니다.
+
+```bash
+# Terminal 1: MCU/motor는 순수 회전을 지원하는 tank mapping으로 시작
+ros2 launch r2d2_bringup r2d2_bringup.launch.py mapping_mode:=tank
+
+# Terminal 2: YOLO detection/tracking (기본 카메라 /dev/video0)
+ros2 launch r2d2_vision vision.launch.py
+
+# Terminal 3: 추적 제어
+ros2 launch r2d2_app person_tracking.launch.py
+```
+
+실제 구동 전에 `mock:=true`로 motor 명령을 확인하고, 실차에서는 낮은
+`base_rotation_speed`와 여유 공간으로 시작합니다. `image_width`는 카메라
+프레임 너비에 맞추고, 필요하면 `head_limit_deg`, `head_recenter_deg`,
+`head_deadband_ratio`, `base_rotation_sign`을 조정합니다.
+
+**추적 중에는 Nav2 controller, teleop 등 다른 `/cmd_vel` 발행자를 함께
+구동하지 마세요.** Motor는 `/cmd_vel` 하나를 공유하며, 경쟁 발행은 의도하지
+않은 이동을 만들 수 있습니다. YOLO tracking 토픽과 `/r2d2/set_head_angle`
+서비스가 준비되지 않으면 tracker는 head 초기화 완료까지 베이스를 정지합니다.
+대상이 timeout 동안 사라지면 정지 후 head 중앙 복귀를 요청합니다.
+MCU 충전 인터록이 켜져도 tracker는 정지하며, 인터록 해제 뒤 head를 다시
+중앙화한 다음 추적을 재개합니다.
+
 ---
 
 ## 3. Motor Benchmark & 검증 도구

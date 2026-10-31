@@ -40,6 +40,7 @@ ROS 2 Jazzy 위에서 R2-D2를 구동하는 colcon 워크스페이스입니다.
 | `src/r2d2_msgs/` | 직접 개발 (ament_cmake) | MCU 브리지/사운드 인터페이스 (McuStatus, ButtonEvent, SoundRequest/Finished, srv 9종) |
 | `src/r2d2_sound/` | 직접 개발 (ament_python) | Pi 스피커 효과음 노드 (`r2d2/sound.py` 벤더 엔진, §1b) |
 | `src/r2d2_bringup/` | 직접 개발 (ament_python) | motor + sound + lidar + RF2O/IMU EKF + slam 통합 launch |
+| `src/r2d2_app/` | 직접 개발 (ament_python) | YOLO 사람 tracking과 head-follow/base in-place alignment 앱 노드 |
 | `src/coin_d4_driver/` | 외부 클론 | ROBOTIS LiDAR 드라이버 (COIN-D3/D4, LDS-02/03 계열) |
 | `src/rf2o_laser_odometry/` | 외부 클론 (vendoring) | scan-to-scan 레이저 원본 오도메트리 (`/odom_rf2o`); EKF가 `/odom` + odom→base_link TF 발행 |
 | `src/hector_slam/` | 외부 클론 (vendoring, Jazzy 패치) | hector_mapping SLAM — slam_toolbox 대체재 (`hector.launch.py`, §5). 기본 SLAM은 slam_toolbox 유지 |
