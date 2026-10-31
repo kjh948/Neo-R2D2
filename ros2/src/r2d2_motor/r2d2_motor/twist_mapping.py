@@ -29,11 +29,23 @@ ANGLE_REVERSE = 180
 
 @dataclass(frozen=True)
 class MoveMapping:
-    max_linear_velocity: float = 0.5   # m/s -> power 100
-    max_angular_velocity: float = 1.0  # rad/s -> power 100
+    max_linear_velocity: float = 0.5   # m/s -> power 100 (the ONE speed scale)
+    max_angular_velocity: float = 1.0  # rad/s -> power 100, only used by the
+                                       # 4-direction twist_to_move teleop mode
     deadband: float = 0.02             # |normalised twist| below this counts as zero
     min_power: int = 1                 # lowest non-zero power to send (tunable)
     invert_strafe: bool = False        # flip if +angular.z strafes the wrong way
+    wheel_separation: float = 0.235    # [m] physical track width (reference only —
+                                       # tank_to_move uses the bench gains below)
+    # Open-loop bench calibration (2026-10-26, tape + stopwatch):
+    #   forward: v = forward_gain*power + 0.0145  (points P20/50/100 -> 0.045/0.10/0.167)
+    #   in-place rotation: omega = rotation_gain*power  (P21 -> 0.165 rad/s, 38 s/rev)
+    # The two gains differ (~5x): leg scrub makes rotation cost more power per
+    # unit of motion, so omega must be converted with lever G = fwd/rot = 0.1914
+    # m*s/rad (vs the physical L/2 = 0.1175) for the polar angle AND power to
+    # come out right. Re-bench after floor/battery/motor changes.
+    forward_gain: float = 0.001525     # (m/s) per power unit
+    rotation_gain: float = 0.00797     # (rad/s) per power unit
 
 
 def twist_to_move(linear_x: float, angular_z: float, mapping: MoveMapping) -> tuple:
@@ -90,25 +102,48 @@ def tank_to_move(linear_x: float, angular_z: float, mapping: MoveMapping) -> tup
       angle -90 = rotate right
       in between = forward arc turning that way
 
-    So the frame is (power, angle) = polar form of (v, omega).  We normalise
-    vx by max_linear_velocity and wz by max_angular_velocity (both become
-    dimensionless [-1, 1], which is the unit-conversion trap from
-    robotics.SE q18048), then re-express in polar:
+    So the frame is (power, angle) = polar form of (v, omega).  The two
+    components MUST share one physical unit, and the calibration that makes
+    the MCU execute what we command (open-loop bench, 2026-10-26) is:
 
-        power = hypot(v_n, w_n) * 100      angle = atan2(w_n, v_n)
+        v_term = vx                       # base forward speed [m/s]
+        w_term = wz * forward_gain/rotation_gain   # = wz * 0.1914 m*s/rad
+        angle  = atan2(w_term, v_term)
+        power  = hypot(v_term, w_term) / (forward_gain * 100) * 100
 
+    The gains are per-power-unit execution slopes: v = 0.001525*P + 0.0145,
+    omega = 0.00797*P (in-place, legs scrub ~5x more per rad than per m).
+    Spot checks against the bench: (0, 0.3) -> P=38 -> omega=0.30 rad/s;
+    (0.15, 0) -> P=98 -> v=0.164; (0.1, 0) -> P=66 -> v=0.115.
+
+    History (why this replaced the old formula): the previous version
+    normalised wz by max_angular_velocity (rad/s over 1.0), i.e. it mixed
+    m/s with rad/s.  That is equivalent to a lever arm of
+    max_linear_velocity/max_angular_velocity = 0.5 m instead of the measured
+    wheel_separation/2 = 0.1175 m — every arc command was executed with its
+    rotation inflated by 0.5/0.1175 ~= 4.26x (vx=0.15,wz=0.3 -> MCU angle 45deg
+    instead of 13deg), which is what made nav2 spins diverge on hardware
+    (2026-10-26).  Pure forward/reverse (w=0) and in-place rotation (v=0) are
+    invariant to the lever arm, so the 4-direction joystick verification
+    (SE q18048) could never expose it — only mixed arc commands do.
+    (First fix used the physical lever L/2 = 0.1175; the open-loop bench then
+    showed in-place rotation needs ~1.63x more power per rad/s than the pure
+    geometry predicts — leg scrub — hence the measured-gain lever above.)
     ``invert_strafe`` flips the rotation sense (use it if +90 turns right).
     """
-    v_n = _clamp(linear_x / max(mapping.max_linear_velocity, 1e-6))
-    w_n = _clamp(angular_z / max(mapping.max_angular_velocity, 1e-6))
-    if mapping.invert_strafe:
-        w_n = -w_n
+    rot_gain = max(abs(mapping.rotation_gain), 1e-9)
+    fwd_gain = max(abs(mapping.forward_gain), 1e-9)
+    lever = fwd_gain / rot_gain   # effective m*s/rad: 0.1914 (bench), not L/2=0.1175
+    v_term = linear_x
+    w_term = -angular_z * lever if mapping.invert_strafe else angular_z * lever
 
-    if _hypot(v_n, w_n) <= mapping.deadband:
+    # power 100 corresponds to fwd_gain*100 m/s of "rim" speed on the fwd axis
+    norm = _clamp(_hypot(v_term, w_term) / max(fwd_gain * 100.0, 1e-6))
+    if norm <= mapping.deadband:
         return 0, ANGLE_FORWARD
 
-    angle = round(_atan2_deg(w_n, v_n))
-    power = _scale_power(_hypot(v_n, w_n), mapping.min_power)
+    angle = round(_atan2_deg(w_term, v_term))
+    power = _scale_power(norm, mapping.min_power)
     # atan2 gives (-180, 180]; MCU uses 180 for reverse already.
     return power, angle
 

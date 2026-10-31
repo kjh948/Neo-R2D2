@@ -118,12 +118,18 @@ controller_server:
       batch_size: 1000
       iteration_count: 1
 
-      vx_max: 0.25
-      wz_max: 0.8
-      vx_std: 0.15
+      vx_max: 0.15   # REAL capability bench 2026-10-26: power100=0.167 m/s, so the
+                     # old 0.25/0.5 commands were aspirational. Comfortable top = 0.15,
+                     # motor max_linear_velocity now 0.17 (cmd 0.17 -> power 100).
+      # TEST 2026-10-26 (B-scenario): wz clamped to 0.4 (was 0.8) to check whether
+      # the cmd_vel_nav angular divergence at low-vx/high-wz combos is a real
+      # MCU polar-kinematics overshoot (robot physically spins more than
+      # commanded) rather than rf2o estimate runaway. Restore 0.8 if B is ruled out.
+      wz_max: 0.4
+      vx_std: 0.06    # scaled to the real 0.15 m/s envelope (was 0.15 @ 0.25 cmd)
       wz_std: 0.4
-      ax_max: 0.5
-      az_max: 1.0
+      ax_max: 0.15
+      az_max: 0.25
 
       prune_distance: 1.5
       transform_tolerance: 0.2
@@ -203,7 +209,9 @@ velocity_smoother:
     stamp_smoothed_velocity_with_smoothing_time: False
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.25, 0.0, 0.8]      # [vx, vy, wz] — differential: vy unused
+    max_velocity: [0.17, 0.0, 0.8]      # [vx, vy, wz] — differential: vy unused.
+                                        # vx = measured full-power speed (0.167); hard
+                                        # clip above what the MCU can ever execute
     min_velocity: [-0.15, 0.0, -0.8]
     max_accel: [0.5, 0.0, 1.0]
     max_decel: [-0.5, 0.0, -1.0]

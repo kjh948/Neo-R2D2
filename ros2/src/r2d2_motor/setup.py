@@ -21,6 +21,7 @@ setup(
     entry_points={
         "console_scripts": [
             "motor_node = r2d2_motor.motor_node:main",
+            "motion_bench = r2d2_motor.motion_bench:main",
         ],
     },
 )

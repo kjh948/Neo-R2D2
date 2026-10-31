@@ -72,13 +72,20 @@ class MotorNode(Node):
         self.declare_parameter("serial_read_timeout", -1.0)
         self.declare_parameter("mock", False)
         self.declare_parameter("cmd_vel_topic", "/cmd_vel")
-        self.declare_parameter("max_linear_velocity", 0.5)
+        # Bench 2026-10-26: power 100 -> 0.167 m/s measured (1 m in 6 s);
+        # 10 Hz open-loop cmd-vs-tape points were (20,0.045)(50,0.10)(100,0.167).
+        self.declare_parameter("max_linear_velocity", 0.17)
         self.declare_parameter("max_angular_velocity", 1.0)
         self.declare_parameter("deadband", 0.02)
         self.declare_parameter("min_power", 1)
         # True by default: the MCU's polar angle sign is mirrored vs the ROS
         # twist convention (hardware check 2026-10-18: +wz turned the robot right).
         self.declare_parameter("invert_strafe", True)
+        self.declare_parameter("wheel_separation", 0.235)
+        # Bench-calibrated execution gains (2026-10-26): v = fwd_gain*P + 0.0145,
+        # omega(in-place) = rot_gain*P. Re-measure after floor/battery/motor changes.
+        self.declare_parameter("forward_gain", 0.001525)
+        self.declare_parameter("rotation_gain", 0.00797)
         self.declare_parameter("mapping_mode", "differential")
         self.declare_parameter("cmd_vel_timeout", 0.5)
         self.declare_parameter("repeat_period", 0.3)
@@ -122,6 +129,9 @@ class MotorNode(Node):
             deadband=self.get_parameter("deadband").value,
             min_power=int(self.get_parameter("min_power").value),
             invert_strafe=self.get_parameter("invert_strafe").value,
+            wheel_separation=self.get_parameter("wheel_separation").value,
+            forward_gain=self.get_parameter("forward_gain").value,
+            rotation_gain=self.get_parameter("rotation_gain").value,
         )
         self._timeout = float(self.get_parameter("cmd_vel_timeout").value)
         repeat_period = float(self.get_parameter("repeat_period").value)

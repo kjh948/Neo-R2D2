@@ -95,38 +95,57 @@ def test_holo_invert_strafe_flips_angle():
     assert angle == -90
 
 
-# --- tank (differential polar) mapping: operator-confirmed MCU semantics -----
+# --- tank (differential polar) mapping: bench-calibrated gain model ----------
+# angle/power convert omega with the MEASURED lever forward_gain/rotation_gain
+# (leg scrub makes rotation cost ~1.63x the physical L/2 geometry) and scale
+# power by forward_gain*100. T picks clean gains so numbers are exact:
+#   lever = 0.002/0.004 = 0.5 m*s/rad, full-power speed = 0.2 m/s.
+T = MoveMapping(max_linear_velocity=0.5, deadband=0.02, min_power=1,
+                forward_gain=0.002, rotation_gain=0.004)
+
 
 def test_tank_pure_forward():
-    assert tank_to_move(0.25, 0.0, M) == (50, 0)      # 0.25/0.5 -> power 50
+    assert tank_to_move(0.1, 0.0, T) == (50, 0)       # 0.1/0.2 -> power 50
 
 
 def test_tank_pure_reverse():
-    power, angle = tank_to_move(-0.5, 0.0, M)
+    power, angle = tank_to_move(-0.2, 0.0, T)
     assert (power, angle) == (100, 180)
 
 
 def test_tank_pure_rotation_left():
-    power, angle = tank_to_move(0.0, 1.0, M)
-    assert (power, angle) == (100, 90)
+    # wz=0.2 -> w_term=0.1 m/s -> 50% of full-power speed, angle 90
+    power, angle = tank_to_move(0.0, 0.2, T)
+    assert (power, angle) == (50, 90)
 
 
 def test_tank_pure_rotation_right():
-    power, angle = tank_to_move(0.0, -1.0, M)
-    assert (power, angle) == (100, -90)
+    power, angle = tank_to_move(0.0, -0.2, T)
+    assert (power, angle) == (50, -90)
 
 
 def test_tank_45_arc():
-    import math
-
-    # v and omega both at 100% -> angle 45 (polar of (1, 1))
-    power, angle = tank_to_move(0.5, 1.0, M)
+    # v and w_term equal (0.1 vs 0.2*0.5) -> true 45 deg arc
+    power, angle = tank_to_move(0.1, 0.2, T)
     assert angle == 45
-    # hypot(1.0, 1.0) = 141% of the normalised frame -> clamped to 100
-    assert power == 100
+    assert power == 71        # hypot(0.1,0.1)/0.2 = 70.7%
 
 
 def test_tank_deadband_and_invert():
-    assert tank_to_move(0.005, 0.005, M)[0] == 0
-    _, angle = tank_to_move(0.0, 1.0, MoveMapping(invert_strafe=True))
+    assert tank_to_move(0.001, 0.001, T)[0] == 0
+    _, angle = tank_to_move(0.0, 0.2, MoveMapping(invert_strafe=True))
     assert angle == -90
+
+
+def test_tank_bench_regression_2026_10_26():
+    # Default M carries the measured gains (fwd 0.001525, rot 0.00797,
+    # lever 0.1914, full-power 0.1525 m/s). These are the exact open-loop
+    # bench points: (0, 0.3) turned a full circle in 38 s at power ~21 under
+    # the OLD scale; the calibrated mapping must now send ~38 so the MCU
+    # actually executes 0.3 rad/s.
+    power, angle = tank_to_move(0.0, 0.3, M)
+    assert (power, angle) == (38, 90)
+    assert tank_to_move(0.1, 0.0, M) == (66, 0)     # bench: 0.1 cmd -> ~0.104 real
+    assert tank_to_move(0.15, 0.0, M) == (98, 0)    # near full power
+    power, angle = tank_to_move(0.15, 0.3, M)       # hypot clamps at full power
+    assert (power, angle) == (100, 21)

@@ -57,7 +57,7 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
 
 - `motor_node.py` — `/cmd_vel` 구독, 300ms 주기 move 반복 전송, 타임아웃 자동 정지,
   **§1b MCU 브리지**(서비스/상태 토픽/projector 시퀀스)
-- `twist_mapping.py` — Twist → power/angle 순수 함수 (단위 테스트 11개)
+- `twist_mapping.py` — Twist → power/angle 순수 함수 (단위 테스트 25개, wheelbase 회귀 포함)
 - `r2d2_link.py` — 리포의 `r2d2/transport.py` + `commander.py` **벤더본**
   (2026-10-25에 전체 명령 세트로 동기화: move/head 3종/d-head·d-leg power/mode/
   projector/arm/lightsaber/led/lcd/play_sound/reset-wdt/debug/shut-down/reset_mcu).
@@ -79,8 +79,13 @@ MCU의 `move(power, angle)`은 차동 운동학 `(v, ω)`의 극좌표 표현: a
   ([robotics.SE q18048](https://robotics.stackexchange.com/q/18048)의 IK를 정규화 극좌표로 재표현)
 - **mapping_mode 파라미터 3종**:
   - `differential` (기본, teleop용): Twist 우세 성분 → 0/180/±90 4방향 양자화
-  - `tank` (nav2 내비게이션용): `(vx/max_lin, wz/max_ang)` → `power=√(v²+ω²)·100`,
-    `angle=atan2(ω, v)` — 연속 각도, 회전 포함 (함수: `twist_mapping.tank_to_move`)
+  - `tank` (nav2 내비게이션용): **휠 접지점 속도 기준 극좌표** — `w_t = wz·(wheel_separation/2)`
+    (실측 차폭 0.235 m, `wheel_separation` 파라미터)로 ω를 m/s 변환 후
+    `angle=atan2(w_t, vx)`, `power=√(vx²+w_t²)/max_lin·100` (함수: `twist_mapping.tank_to_move`).
+    ⚠️ 2026-10-26 이전엔 `(vx/max_lin, wz/max_ang)`로 **m/s와 rad/s를 직접 섞어**
+    유효 lever arm이 0.5 m(실제 0.1175 m) — 중간 각도 arc의 회전이 4.26배 과실행되어
+    nav2 ω 발산을 유발. 0/±90/180 4방향은 lever arm과 무관해 조이스틱 확인으로는
+    잡히지 않았던 함정 (혼합 arc 회귀 테스트: `test_tank_arc_no_wheelbase_inflation`)
   - `holonomic`: (vx, vy) 병진 가설용 — 구동 모델 확인 결과 **사용 안 함** (코드만 잔존)
 - **안전**: `cmd_vel_timeout`(0.5s) 내 Twist 없으면 `power:0` 1회 전송.
   `Twist=0` 수신 시 즉시 정지. 충전 중(`charging-status != 0`)이면 move 차단 (Commander 인터록)
@@ -439,8 +444,8 @@ r2d2_navigation/
 
 | 계층 | 선택 | 이유 |
 |---|---|---|
-| 모션 | `r2d2_motor mapping_mode:=tank` | MCU (power, angle) = (v, ω) 극좌표 (운영자 확인, SE q18048) |
-| 컨트롤러 | MPPI `motion_model: DiffDrive` (wz_max 0.8) | 기본 critics 전체 유효 (회전 가능) |
+| 모션 | `r2d2_motor mapping_mode:=tank` | MCU (power, angle) = (v, ω) 극좌표 (운영자 확인, SE q18048) — **wheelbase 정규화**: w_t=ω·L/2 (L=0.235 m 실측) 기준으로 v와 같은 m/s 단위 혼합 (§1b, 2026-10-26 발산 교정) |
+| 컨트롤러 | MPPI `motion_model: DiffDrive` (vx_max 0.15, wz_max 0.4 test) | 실측 top speed 0.167 m/s @ power100 (벤치 2026-10-26) — 구 vx_max 0.25/0.5는 물리 불가 가정. 기본 critics 전체 유효 |
 | 플래너 | NavFn | diff 로봇 표준, 경로에 heading 포함 |
 | 위치추정 | **rf2o(odom→base_link) + slam_toolbox localization(map→odom)** | wheel odom 없음 → scan 기반 레이저 odom. nav2 표준 TF 체인이 완성되어 local costmap(odom)/velocity_smoother(/odom)/MPPI가 정상 동작 |
 | 자기위치 보정 | RViz **2D Pose Estimate** → `/initialpose` (slam_toolbox 네이티브) | 출발 기본값 `map_start_pose: [0,0,0]` (매핑 시작 지점), 어딘가에 출발하면 클릭으로 보정 |
@@ -749,3 +754,7 @@ source install/setup.bash
 
 ## 구동팁
 - ros2 run teleop_twist_keyboard teleop_twist_keyboard 를 이용하여 모터제어
+
+ros2 launch r2d2_navigation navigation.launch.py localization:=map_server map_yaml:=/home/kjh948/workspace/Neo-R2D2/ros2/src/r2d2_navigation/maps/r2d2_home.yaml
+
+ros2 launch r2d2_bringup remote.launch.py rviz_config:=$(ros2 pkg prefix r2d2_navigation)/share/r2d2_navigation/rviz/nav2_config.rviz

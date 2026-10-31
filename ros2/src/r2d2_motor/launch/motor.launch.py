@@ -27,10 +27,21 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("mock", default_value="false",
                               description="Log UART frames instead of touching hardware"),
         DeclareLaunchArgument("cmd_vel_topic", default_value="/cmd_vel"),
-        DeclareLaunchArgument("max_linear_velocity", default_value="0.5",
-                              description="linear.x (m/s) that maps to power=100"),
+        DeclareLaunchArgument("max_linear_velocity", default_value="0.17",
+                              description="linear.x (m/s) that maps to power=100 — "
+                                          "measured top speed at full power is 0.167 m/s "
+                                          "(bench 2026-10-26, 1 m in 6 s)"),
         DeclareLaunchArgument("max_angular_velocity", default_value="1.0",
-                              description="angular.z (rad/s) that maps to power=100"),
+                              description="angular.z (rad/s) that maps to power=100 "
+                                          "(4-direction 'differential' teleop mode only — "
+                                          "'tank' mode uses wheel_separation instead)"),
+        DeclareLaunchArgument("wheel_separation", default_value="0.235",
+                              description="measured track width [m] (reference; the 'tank' "
+                                          "polar mapping uses forward_gain/rotation_gain)"),
+        DeclareLaunchArgument("forward_gain", default_value="0.001525",
+                              description="bench-calibrated: v [m/s] = forward_gain*power (+0.0145)"),
+        DeclareLaunchArgument("rotation_gain", default_value="0.00797",
+                              description="bench-calibrated: in-place omega [rad/s] = rotation_gain*power"),
         DeclareLaunchArgument("cmd_vel_timeout", default_value="0.5",
                               description="Seconds without a Twist before an automatic stop"),
         DeclareLaunchArgument("repeat_period", default_value="0.3",
@@ -73,6 +84,9 @@ def generate_launch_description() -> LaunchDescription:
                 "cmd_vel_timeout": ParameterValue(LaunchConfiguration("cmd_vel_timeout"), value_type=float),
                 "repeat_period": ParameterValue(LaunchConfiguration("repeat_period"), value_type=float),
                 "invert_strafe": ParameterValue(LaunchConfiguration("invert_strafe"), value_type=bool),
+                "wheel_separation": ParameterValue(LaunchConfiguration("wheel_separation"), value_type=float),
+                "forward_gain": ParameterValue(LaunchConfiguration("forward_gain"), value_type=float),
+                "rotation_gain": ParameterValue(LaunchConfiguration("rotation_gain"), value_type=float),
                 "mapping_mode": ParameterValue(LaunchConfiguration("mapping_mode"), value_type=str),
             }],
         ),
