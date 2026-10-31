@@ -51,3 +51,14 @@ mpu6050_sensor:
     accel_x_offset: 0.0
     accel_y_offset: 0.0
     accel_z_offset: 0.0
+
+    # Conservative starting values for an uncalibrated MPU6050. These should be
+    # replaced with stationary measurements from `ros2 run ros2_mpu6050
+    # analyze_imu --duration 30 --stationary` before final EKF tuning.
+    # Units: (rad/s)^2 for gyro, (m/s^2)^2 for acceleration.
+    gyro_x_variance: 1.0e-4
+    gyro_y_variance: 1.0e-4
+    gyro_z_variance: 2.0e-4
+    accel_x_variance: 1.0e-3
+    accel_y_variance: 1.0e-3
+    accel_z_variance: 1.5e-3

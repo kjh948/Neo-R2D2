@@ -5,6 +5,8 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 
+#include <string>
+
 class Mpu6050Node : public rclcpp::Node {
  public:
   Mpu6050Node(const std::string& name);
@@ -23,6 +25,12 @@ class Mpu6050Node : public rclcpp::Node {
   double accel_y_offset_ {0.0};
   double accel_z_offset_ {0.0};
 
+  double gyro_x_variance_ {1.0e-4};
+  double gyro_y_variance_ {1.0e-4};
+  double gyro_z_variance_ {2.0e-4};
+  double accel_x_variance_ {1.0e-3};
+  double accel_y_variance_ {1.0e-3};
+  double accel_z_variance_ {1.5e-3};
 };
 
 #endif  // MPU6050DRIVER_H
