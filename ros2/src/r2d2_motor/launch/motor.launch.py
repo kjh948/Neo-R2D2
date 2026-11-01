@@ -54,6 +54,20 @@ def generate_launch_description() -> LaunchDescription:
                               description="'differential' (teleop 4-dir), 'holonomic' (vx/vy) "
                                           "or 'tank' (nav2 vx/wz -> MCU polar — what "
                                           "r2d2_navigation uses)"),
+        DeclareLaunchArgument("min_power", default_value="1",
+                              description="Power floor for any non-zero move frame. "
+                                          "Below it the legs stall (MCU deadband/static "
+                                          "friction) — set from 'motion_bench --mode "
+                                          "minvel': any cmd whose mapped power is under "
+                                          "this executes AT the floor instead of failing "
+                                          "to move. Final hardware-side guard so no "
+                                          "controller (RPP/MPPI/teleop/recoveries) can "
+                                          "command into the stall band"),
+        DeclareLaunchArgument("deadband", default_value="0.02",
+                              description="Normalised |cmd| below this maps to power 0 "
+                                          "(a real stop). Must stay BELOW the motion "
+                                          "threshold minvel measured, else slow nav2 "
+                                          "creeps are silently dropped"),
         DeclareLaunchArgument("gin_period", default_value="5.0",
                               description="Seconds between MCU gin status polls (0 = no polling); "
                                           "each reply republishes /r2d2/status"),
@@ -87,6 +101,8 @@ def generate_launch_description() -> LaunchDescription:
                 "wheel_separation": ParameterValue(LaunchConfiguration("wheel_separation"), value_type=float),
                 "forward_gain": ParameterValue(LaunchConfiguration("forward_gain"), value_type=float),
                 "rotation_gain": ParameterValue(LaunchConfiguration("rotation_gain"), value_type=float),
+                "min_power": ParameterValue(LaunchConfiguration("min_power"), value_type=int),
+                "deadband": ParameterValue(LaunchConfiguration("deadband"), value_type=float),
                 "mapping_mode": ParameterValue(LaunchConfiguration("mapping_mode"), value_type=str),
             }],
         ),

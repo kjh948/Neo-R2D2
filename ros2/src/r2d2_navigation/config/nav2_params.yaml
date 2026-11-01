@@ -119,12 +119,21 @@ controller_server:
       max_lookahead_dist: 0.60
       use_regulated_linear_velocity_scaling: true
       regulated_linear_scaling_min_radius: 0.5
+      # ABSOLUTE FLOOR for RPP's curvature/cost speed regulation. The legs
+      # stall below the minvel bench limit (calibration implies ~0.016 m/s at
+      # power 1; STITION floor unknown until `motion_bench --mode minvel`
+      # runs) — regulation must never push the command into the stall band,
+      # so keep this comfortably ABOVE the measured minimum. Re-check after
+      # every bench run:  ros2 run r2d2_motor motion_bench --mode minvel
       regulated_linear_scaling_min_speed: 0.05
       use_cost_regulated_linear_velocity_scaling: true
       cost_scaling_dist: 0.30
       cost_scaling_gain: 1.0
       inflation_cost_scaling_factor: 5.0
       use_rotate_to_heading: true
+      # 0.4 rad/s sits inside the executable rotation band (calibration:
+      # power ~50 -> ~0.4 rad/s; stall limit comes from
+      # `motion_bench --mode minvel`, must stay below this).
       rotate_to_heading_angular_vel: 0.4
       max_angular_accel: 0.1
       rotate_to_heading_min_angle: 0.785
@@ -145,6 +154,16 @@ controller_server:
       vx_max: 0.15   # REAL capability bench 2026-10-26: power100=0.167 m/s, so the
                      # old 0.25/0.5 commands were aspirational. Comfortable top = 0.15,
                      # motor max_linear_velocity now 0.17 (cmd 0.17 -> power 100).
+      # Hard lower bound of the sampled vx band (jazzy MPPI exposes vx_min but has
+      # NO wz_min — negative speeds are excluded by DiffDrive anyway). Keep it at
+      # the minvel bench's linear limit so MPPI never samples into the band the
+      # legs cannot execute (below ~0.016 m/s by the power-1 calibration point;
+      # CONFIRM with `motion_bench --mode minvel` and update this from its
+      # printed recommendation). Trade-off accepted: while following a path
+      # MPPI then never publishes vx in (0, vx_min); the final stop comes from
+      # path completion/goal-reached (xy tolerance 0.15 m is hit long before a
+      # 0.02 m/s creep matters), not from a slow-down-through-the-band.
+      vx_min: 0.02
       # TEST 2026-10-26 (B-scenario): wz clamped to 0.4 (was 0.8) to check whether
       # the cmd_vel_nav angular divergence at low-vx/high-wz combos is a real
       # MCU polar-kinematics overshoot (robot physically spins more than
@@ -154,6 +173,11 @@ controller_server:
       wz_std: 0.4
       ax_max: 0.15
       az_max: 0.25
+
+      # Angular lower limits cannot be constrained via a parameter (no wz_min in
+      # this build), so non-zero-but-stalling wz commands are handled one layer
+      # down: r2d2_motor min_power floors EVERY non-zero move frame above the
+      # measured stall band (motion_bench --mode minvel prints the value).
 
       prune_distance: 1.5
       transform_tolerance: 0.2
@@ -187,6 +211,10 @@ behavior_server:
     robot_base_frame: base_link
     transform_tolerance: 0.5
     simulate_ahead_time: 2.0
+    # Spin executes at max_rotational_vel (calibration: rotation_gain 0.00797
+    # rad/s per power -> 0.8 rad/s needs ~power 100, the ceiling; the velocity
+    # smoother caps wz at 0.8 too). min_rotational_vel must stay ABOVE the
+    # stall limit printed by `motion_bench --mode minvel --axis angular`.
     max_rotational_vel: 0.8
     min_rotational_vel: 0.1
     rotational_acc_lim: 1.0
@@ -237,6 +265,10 @@ velocity_smoother:
                                         # vx = measured full-power speed (0.167); hard
                                         # clip above what the MCU can ever execute
     min_velocity: [-0.15, 0.0, -0.8]
+    # NOTE: min/max_velocity are CEILINGS only — this smoother cannot floor a
+    # non-zero command up to the stall limit. That job belongs to r2d2_motor's
+    # min_power (set from `motion_bench --mode minvel`), which every command
+    # path (RPP/MPPI/teleop/recoveries) funnels through.
     max_accel: [0.5, 0.0, 0.5]
     max_decel: [-0.5, 0.0, -0.5]
     odom_topic: /odom          # robot_localization publishes the fused odometry

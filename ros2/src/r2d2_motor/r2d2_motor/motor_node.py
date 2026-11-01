@@ -85,7 +85,9 @@ class MotorNode(Node):
         # Bench-calibrated execution gains (2026-10-26): v = fwd_gain*P + 0.0145,
         # omega(in-place) = rot_gain*P. Re-measure after floor/battery/motor changes.
         self.declare_parameter("forward_gain", 0.001525)
-        self.declare_parameter("rotation_gain", 0.01)
+        # 0.165 rad/s @ power 21 (38 s/rev), see twist_mapping bench notes —
+        # keep identical to motor.launch.py's default or standalone runs drift.
+        self.declare_parameter("rotation_gain", 0.00797)
         self.declare_parameter("mapping_mode", "differential")
         self.declare_parameter("cmd_vel_timeout", 0.5)
         self.declare_parameter("repeat_period", 0.1)
