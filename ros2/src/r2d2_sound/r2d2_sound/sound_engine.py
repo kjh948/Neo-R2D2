@@ -22,6 +22,8 @@ LOG = logging.getLogger("sound")
 _PLAYER_CANDIDATES = (
     ("paplay", ("--volume", "65536")),
     ("aplay", ()),
+    # SoX play — mp3 via libsox-fmt-mp3, user-selected over mpg123 (2026-11-01)
+    ("play", ("-q",)),
     ("mpg123", ("-q",)),
     ("mpv", ("--no-video", "--really-quiet")),
     ("ffplay", ("-nodisp", "-autoexit", "-loglevel", "quiet")),
@@ -118,7 +120,11 @@ class SoundPlayer:
         # Filled in mock mode so tests and ``mock`` runs can see what would
         # have been audible without an audio device.
         self.played: list = []
-        self._lock = threading.Lock()
+        # RLock, NOT Lock: play() calls stop() while already holding this lock
+        # (clip-replacement path) — a plain Lock self-deadlocks there and
+        # freezes the whole sound node executor. (Upstream r2d2/sound.py has
+        # the same call pattern; sync carefully if copying back.)
+        self._lock = threading.RLock()
         self._process = None
         self._current = None
         self._completion = threading.Event()
@@ -218,6 +224,9 @@ class SoundPlayer:
             if player == "ffplay":
                 volume_arg = ["-volume", str(int(self.volume / 100 * 100))]
                 return [binary, *flags, *volume_arg, path]
+            if player == "play" and self.volume != 100:
+                # sox takes an amplitude percent: --volume 60%
+                return [binary, "-q", "--volume", f"{int(self.volume)}%", path]
             if player == "paplay" and self.volume != 100:
                 return [binary, "--volume", str(int(self.volume * 655)), path]
             return [binary, *flags, path]

@@ -175,3 +175,73 @@ pkill -f '...'
 ### cmd_vel이 안 먹힐 때
 - `r2d2_motor` 노드 실행 중인지 확인 (`ros2 node list`)
 - `/r2d2/status`에서 `charging: 0`인지 확인 (충전 중이면 모션 차단)
+
+---
+
+## 8. 사운드 (r2d2_sound)
+
+### 실행
+```bash
+ros2 launch r2d2_sound sound.launch.py          # 또는 r2d2_bringup에 포함
+# 시작 로그: "r2d2_sound ready: dir=... volume=100"
+```
+
+### 재생/정지/뮤트 — CLI
+```bash
+# id로 재생
+ros2 service call /r2d2/sound/play r2d2_msgs/srv/PlaySound "{sound_id: 7}"
+# clip 이름으로 재생 (mp3/wav, sound_effects/ directory)
+ros2 service call /r2d2/sound/play r2d2_msgs/srv/PlaySound "{clip: 'lonely_hello'}"
+# 지금 재생 중인 소리를 끊고 교체
+ros2 service call /r2d2/sound/play r2d2_msgs/srv/PlaySound "{sound_id: 6, interrupt: true}"
+# 정지 / 뮤트 on·off
+ros2 service call /r2d2/sound/stop    std_srvs/srv/Trigger  "{}"
+ros2 service call /r2d2/sound/set_mute std_srvs/srv/SetBool "{data: true}"
+```
+응답: `success` / `message` / `clip_resolved`. 재생 종료 이벤트는
+`/r2d2/sound/finished` (SoundFinished, interrupted 플래그 포함)로 나옴.
+
+### sound_id 표
+| id | clip | id | clip |
+|----|------|----|------|
+| 0 | pulling_it_together | 10 | lonely_singing |
+| 1 | sing_song_response | 11 | nagging_whine |
+| 2 | abrupt_burst | 12 | short_raspberry |
+| 3 | alarmed_thrill | 13 | startled_three_tone |
+| 4 | building_freak_out | 14 | startled_whoop |
+| 5 | curt_reply | 15 | stifled_laugh |
+| 6 | danger_danger | 16 | uncertain_two_tone |
+| 7 | happiness_confirmation | 17 | unconvinced_grumbling |
+| 8 | happy_three_chirp | 18 | upset_two_tone |
+| 9 | lonely_hello | 100/101, 301/302 | starwar01/03, angle/stark |
+
+표에 없는 id는 `happy_three_chirp`로 폴백.
+
+### 프로그램으로 호출 (노드 안에서)
+```python
+from r2d2_msgs.srv import PlaySound
+
+client = self.create_client(PlaySound, "/r2d2/sound/play")
+req = PlaySound.Request()
+req.sound_id = 7
+req.interrupt = True
+client.call_async(req)   # fire-and-forget
+```
+MCU가 보낸 play_sound 프레임은 r2d2_motor가 `/r2d2/sound/request`로 리퍼블릭 → 같은 테이블 사용.
+
+### 지연(time-to-sound) 참고
+- **CLI 호출**: Enter 후 소리까지 **약 1초** — 대부분 `ros2 service call` 프로세스 자체
+  기동(python import + DDS discovery) 비용. 이미 도는 노드가 서비스 호출하면 수 ms.
+- **엔진/오디오 계층**: 재생기는 SoX `play -q` (mp3는 libsox-fmt-mp3로 디코딩;
+  `_PLAYER_CANDIDATES` 순서 — wav는 paplay). PipeWire sink idle suspend 재개 지연은
+  실측 무의미 (< 0.2초, 벤치 2026-11-01). 교체(interrupt) 호출 시 이전 클립
+  terminate 대기로 +0.3~0.5초.
+- **볼륨**: `volume` 파라미터(0~100, 동적):
+  `ros2 param set /r2d2_sound volume 60`
+
+### 트러블슈팅
+- 호출 후 응답이 영구 히딩: 2026-11-01 이전 `sound_engine.py`의 교체 경로
+  데드락(`play()`→`stop()` 같은 Lock 재진입) — `RLock`으로 수정됨. rebuild 필요:
+  `colcon build --packages-select r2d2_sound`
+- 소리가 안 나면: 뮤트 여부(`ros2 param get /r2d2_sound mute`), PipeWire sink
+  (`pactl list sinks | grep State`), 클립 파일 존재(`sound_dir` 파라미터) 확인
