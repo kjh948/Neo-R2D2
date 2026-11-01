@@ -112,9 +112,9 @@ controller_server:
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
       desired_linear_vel: 0.12
-      lookahead_dist: 0.45
+      lookahead_dist: 0.25
       use_velocity_scaled_lookahead_dist: true
-      lookahead_time: 1.5
+      lookahead_time: 0.75
       min_lookahead_dist: 0.25
       max_lookahead_dist: 0.60
       use_regulated_linear_velocity_scaling: true
@@ -134,8 +134,10 @@ controller_server:
       # 0.4 rad/s sits inside the executable rotation band (calibration:
       # power ~50 -> ~0.4 rad/s; stall limit comes from
       # `motion_bench --mode minvel`, must stay below this).
-      rotate_to_heading_angular_vel: 0.4
-      max_angular_accel: 0.1
+      rotate_to_heading_angular_vel: 0.1
+      #0.016
+      max_angular_accel: 0.05
+      #0.1
       rotate_to_heading_min_angle: 0.785
       allow_reversing: false
       use_collision_detection: true
@@ -216,7 +218,7 @@ behavior_server:
     # smoother caps wz at 0.8 too). min_rotational_vel must stay ABOVE the
     # stall limit printed by `motion_bench --mode minvel --axis angular`.
     max_rotational_vel: 0.8
-    min_rotational_vel: 0.1
+    min_rotational_vel: 0.016
     rotational_acc_lim: 1.0
 
 waypoint_follower:
@@ -261,16 +263,16 @@ velocity_smoother:
     stamp_smoothed_velocity_with_smoothing_time: False
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.17, 0.0, 0.8]      # [vx, vy, wz] — differential: vy unused.
+    max_velocity: [0.05, 0.0, 0.1]      # [vx, vy, wz] — differential: vy unused.
                                         # vx = measured full-power speed (0.167); hard
                                         # clip above what the MCU can ever execute
-    min_velocity: [-0.15, 0.0, -0.8]
+    min_velocity: [-0.05, 0.0, -0.1]
     # NOTE: min/max_velocity are CEILINGS only — this smoother cannot floor a
     # non-zero command up to the stall limit. That job belongs to r2d2_motor's
     # min_power (set from `motion_bench --mode minvel`), which every command
     # path (RPP/MPPI/teleop/recoveries) funnels through.
-    max_accel: [0.5, 0.0, 0.5]
-    max_decel: [-0.5, 0.0, -0.5]
+    max_accel: [0.1, 0.0, 1.0]
+    max_decel: [-0.1, 0.0, -2.0]
     odom_topic: /odom          # robot_localization publishes the fused odometry
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]
@@ -304,8 +306,8 @@ global_costmap:
           min_obstacle_height: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        inflation_radius: 0.25
-        cost_scaling_factor: 5.0
+        inflation_radius: 0.10
+        cost_scaling_factor: 1.0
       always_send_full_costmap: True
 
 local_costmap:

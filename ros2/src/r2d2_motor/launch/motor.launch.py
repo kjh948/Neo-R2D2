@@ -54,7 +54,7 @@ def generate_launch_description() -> LaunchDescription:
                               description="'differential' (teleop 4-dir), 'holonomic' (vx/vy) "
                                           "or 'tank' (nav2 vx/wz -> MCU polar — what "
                                           "r2d2_navigation uses)"),
-        DeclareLaunchArgument("min_power", default_value="1",
+        DeclareLaunchArgument("min_power", default_value="10",
                               description="Power floor for any non-zero move frame. "
                                           "Below it the legs stall (MCU deadband/static "
                                           "friction) — set from 'motion_bench --mode "
@@ -63,7 +63,7 @@ def generate_launch_description() -> LaunchDescription:
                                           "to move. Final hardware-side guard so no "
                                           "controller (RPP/MPPI/teleop/recoveries) can "
                                           "command into the stall band"),
-        DeclareLaunchArgument("deadband", default_value="0.02",
+        DeclareLaunchArgument("deadband", default_value="0.0000001",
                               description="Normalised |cmd| below this maps to power 0 "
                                           "(a real stop). Must stay BELOW the motion "
                                           "threshold minvel measured, else slow nav2 "

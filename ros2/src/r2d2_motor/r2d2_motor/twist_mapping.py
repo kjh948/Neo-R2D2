@@ -45,7 +45,7 @@ class MoveMapping:
     # m*s/rad (vs the physical L/2 = 0.1175) for the polar angle AND power to
     # come out right. Re-bench after floor/battery/motor changes.
     forward_gain: float = 0.001525     # (m/s) per power unit
-    rotation_gain: float = 0.00797     # (rad/s) per power unit (P21 -> 0.165
+    rotation_gain: float = 0.15     # (rad/s) per power unit (P21 -> 0.165
                                        # rad/s = 38 s/rev; matches motor.launch.py)
 
 

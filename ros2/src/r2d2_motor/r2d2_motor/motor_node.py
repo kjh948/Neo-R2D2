@@ -250,9 +250,10 @@ class MotorNode(Node):
             power, angle = holonomic_to_move(twist.linear.x, twist.linear.y, self._mapping)
         elif self._mode == "tank":
             power, angle = tank_to_move(twist.linear.x, twist.angular.z, self._mapping)
+            self.get_logger().info(f"twist.x={twist.linear.x}\ttwist.z={twist.angular.z}\tmove(power={power}, angle={angle})")
         else:
             power, angle = twist_to_move(twist.linear.x, twist.angular.z, self._mapping)
-
+            
         if power == 0 or stale:
             if self._driving:
                 reason = "cmd_vel timed out" if stale else "twist is zero"

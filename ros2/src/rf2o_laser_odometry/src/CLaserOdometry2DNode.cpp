@@ -173,11 +173,11 @@ void CLaserOdometry2DNode::process()
     // Do not run on the same data!
     new_scan_available = false;
   }
-  else
-  {
-    // This is a warning. We depend on laser scans, so no meaning running faster than scan freq.
-    RCLCPP_WARN(get_logger(), "Waiting for laser_scans....");
-  }
+  // else
+  // {
+  //   // This is a warning. We depend on laser scans, so no meaning running faster than scan freq.
+  //   RCLCPP_WARN(get_logger(), "Waiting for laser_scans....");
+  // }
 }
 
 
