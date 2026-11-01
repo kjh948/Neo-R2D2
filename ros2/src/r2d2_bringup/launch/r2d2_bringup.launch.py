@@ -92,6 +92,9 @@ def generate_launch_description():
         DeclareLaunchArgument("enable_slam", default_value="true"),
         DeclareLaunchArgument("mock", default_value="false",
                               description="motor node: log UART frames instead of hardware"),
+        DeclareLaunchArgument("mapping_mode", default_value="differential",
+                              description="motor Twist mapping; use tank for pure in-place "
+                                          "rotation consumers such as person tracking"),
         DeclareLaunchArgument("lidar_port", default_value="/dev/ttyAMA1"),
         DeclareLaunchArgument("lidar_version", default_value="4",
                               description="coin_d4_driver protocol version: "
@@ -135,7 +138,10 @@ def generate_launch_description():
     # --- motor: /cmd_vel -> MCU move + MCU function bridge ---------------------
     motor = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(motor_share, "launch", "motor.launch.py")),
-        launch_arguments={"mock": LaunchConfiguration("mock")}.items(),
+        launch_arguments={
+            "mock": LaunchConfiguration("mock"),
+            "mapping_mode": LaunchConfiguration("mapping_mode"),
+        }.items(),
         condition=IfCondition(LaunchConfiguration("enable_motor")),
     )
 
