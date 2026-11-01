@@ -13,6 +13,7 @@ absolute topic while living in the `yolo` namespace.
 """
 
 import os
+from typing import List
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -35,8 +36,11 @@ def generate_launch_description():
         DeclareLaunchArgument("video_device", default_value="/dev/video0"),
         DeclareLaunchArgument("camera_width", default_value="640"),
         DeclareLaunchArgument("camera_height", default_value="480"),
-        DeclareLaunchArgument("pixel_format", default_value="",
-                              description="v4l2 fourcc, e.g. MJPG for 640x480@30 on weak USB cams"),
+        # Jazzy v4l2_camera has no MJPG decode path: an empty fourcc trips its
+        # "Invalid pixel format size" check and a camera left in MJPG by another
+        # app publishes encoding "" -> cv_bridge abort. Always force YUYV.
+        DeclareLaunchArgument("pixel_format", default_value="YUYV",
+                              description="v4l2 fourcc (YUYV supported; MJPG is NOT in this build)"),
         DeclareLaunchArgument("ns", default_value="yolo", description="detection node namespace"),
         DeclareLaunchArgument("model_path", default_value=default_model),
         DeclareLaunchArgument("max_fps", default_value="15.0"),
@@ -58,8 +62,12 @@ def generate_launch_description():
         output="screen", condition=IfCondition(LaunchConfiguration("use_camera")),
         parameters=[{
             "video_device": LaunchConfiguration("video_device"),
-            "image_size": [ParameterValue(LaunchConfiguration("camera_width"), value_type=int),
-                           ParameterValue(LaunchConfiguration("camera_height"), value_type=int)],
+            # Nested-list form + List[int]: a flat [LC, LC] would be read as ONE
+            # substitution and concatenate ("640"+"480" -> 640480); ParameterValue
+            # items inside a plain list are rejected outright by launch_ros.
+            "image_size": ParameterValue(
+                [[LaunchConfiguration("camera_width")],
+                 [LaunchConfiguration("camera_height")]], value_type=List[int]),
             "pixel_format": ParameterValue(LaunchConfiguration("pixel_format"), value_type=str),
             "frame_id": "cam",
         }])

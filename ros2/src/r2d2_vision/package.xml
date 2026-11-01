@@ -21,8 +21,6 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>v4l2_camera</exec_depend>
 
-  <!-- pip wheel, NOT apt: /usr/bin/python3 -m pip install --user
-       --break-system-packages --no-deps ncnn==1.0.20260526 (--no-deps is load-bearing) -->
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
   <exec_depend>python3-yaml</exec_depend>

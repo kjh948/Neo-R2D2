@@ -27,13 +27,13 @@ class PersonTrackerNode(Node):
         self.declare_parameter("control_rate", 10.0)
         self.declare_parameter("image_width", 640)
         self.declare_parameter("camera_hfov_deg", 80.0)
-        self.declare_parameter("head_deadband_ratio", 0.03)
+        self.declare_parameter("head_deadband_deg", 10.0)
         self.declare_parameter("head_follow_gain", 0.5)
         self.declare_parameter("max_head_shift_deg", 5)
         self.declare_parameter("head_limit_deg", 30.0)
         self.declare_parameter("head_recenter_deg", 10.0)
-        self.declare_parameter("base_rotation_speed", 0.15)
-        self.declare_parameter("base_rotation_sign", 1)
+        self.declare_parameter("base_rotation_speed", 0.105)
+        self.declare_parameter("base_rotation_sign", -1)  # see PersonTrackerController
         self.declare_parameter("target_lost_timeout", 0.7)
 
         get = self.get_parameter
@@ -43,7 +43,7 @@ class PersonTrackerNode(Node):
         self.controller = PersonTrackerController(
             image_width=int(get("image_width").value),
             camera_hfov_deg=float(get("camera_hfov_deg").value),
-            head_deadband_ratio=float(get("head_deadband_ratio").value),
+            head_deadband_deg=float(get("head_deadband_deg").value),
             head_follow_gain=float(get("head_follow_gain").value),
             max_head_shift_deg=int(get("max_head_shift_deg").value),
             head_limit_deg=float(get("head_limit_deg").value),

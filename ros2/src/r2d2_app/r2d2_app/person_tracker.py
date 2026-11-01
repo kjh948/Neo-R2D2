@@ -30,21 +30,26 @@ class PersonTrackerController:
         self,
         image_width: int = 640,
         camera_hfov_deg: float = 80.0,
-        head_deadband_ratio: float = 0.03,
+        head_deadband_deg: float = 10.0,
         head_follow_gain: float = 0.5,
         max_head_shift_deg: int = 5,
         head_limit_deg: float = 30.0,
         head_recenter_deg: float = 10.0,
-        base_rotation_speed: float = 0.15,
-        base_rotation_sign: int = 1,
+        base_rotation_speed: float = 0.105,
+        # _head_angle > 0 means the person went out on the RIGHT of the frame
+        # (head follows: positive shift = right, hardware-confirmed). The motor
+        # honours the ROS twist convention (+wz = CCW/left), so turning toward
+        # a right-side person needs NEGATIVE wz -> sign is -1.
+        base_rotation_sign: int = -1,
         target_lost_timeout: float = 0.7,
     ) -> None:
         if image_width <= 0:
             raise ValueError("image_width must be positive")
         if not math.isfinite(camera_hfov_deg) or camera_hfov_deg <= 0.0:
             raise ValueError("camera_hfov_deg must be positive")
-        if not math.isfinite(head_deadband_ratio) or not 0.0 <= head_deadband_ratio < 0.5:
-            raise ValueError("head_deadband_ratio must be in [0, 0.5)")
+        if (not math.isfinite(head_deadband_deg)
+                or not 0.0 <= head_deadband_deg < camera_hfov_deg / 2.0):
+            raise ValueError("head_deadband_deg must be in [0, camera_hfov_deg/2)")
         if not math.isfinite(head_follow_gain) or head_follow_gain <= 0.0:
             raise ValueError("head_follow_gain must be positive")
         if max_head_shift_deg <= 0:
@@ -63,12 +68,12 @@ class PersonTrackerController:
 
         self.image_width = int(image_width)
         self.camera_hfov_deg = float(camera_hfov_deg)
-        self.head_deadband_ratio = float(head_deadband_ratio)
+        self.head_deadband_deg = float(head_deadband_deg)
         self.head_follow_gain = float(head_follow_gain)
         self.max_head_shift_deg = int(max_head_shift_deg)
         self.head_limit_deg = float(head_limit_deg)
         self.head_recenter_deg = float(head_recenter_deg)
-        self.base_rotation_speed = float(base_rotation_speed)
+        self.base_rotation_speed = float(base_rotation_speed)  # 0.15 minus 30% bench ask
         self.base_rotation_sign = int(base_rotation_sign)
         self.target_lost_timeout = float(target_lost_timeout)
 
@@ -148,9 +153,12 @@ class PersonTrackerController:
 
         target = self._target
         error_px = target.center_x - self.image_width / 2.0
-        deadband_px = self.image_width * self.head_deadband_ratio
+        # center margin: person within +/- head_deadband_deg of frame centre
+        # -> everything holds still (head AND base, even mid-align)
+        deadband_px = self.image_width * self.head_deadband_deg / self.camera_hfov_deg
+        within_margin = abs(error_px) <= deadband_px
         head_shift = 0
-        if abs(error_px) > deadband_px:
+        if not within_margin:
             error_deg = error_px / self.image_width * self.camera_hfov_deg
             requested = round(self.head_follow_gain * error_deg)
             if requested == 0:
@@ -163,7 +171,9 @@ class PersonTrackerController:
             head_shift = int(round(target_angle - self._head_angle))
 
         angular_z = 0.0
-        if self._state == "align" and abs(self._head_angle) > self.head_recenter_deg:
+        if (not within_margin
+                and self._state == "align"
+                and abs(self._head_angle) > self.head_recenter_deg):
             angular_z = (
                 self.base_rotation_sign
                 * math.copysign(self.base_rotation_speed, self._head_angle)

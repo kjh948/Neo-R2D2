@@ -25,6 +25,7 @@ import threading
 
 import numpy as np
 import rclpy
+from rclpy.exceptions import ParameterUninitializedException
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
@@ -110,7 +111,11 @@ class DetectionNode(Node):
         self.max_fps = max(0.5, float(p("max_fps").value))
         self.use_tracking = bool(p("use_tracking").value)
         self.tracker_type = str(p("tracker_type").value)
-        self.class_filter = set(p("class_filter").value or [])
+        try:
+            self.class_filter = set(p("class_filter").value or [])
+        except ParameterUninitializedException:
+            # unset-typed declaration (see above): absent until someone overrides it
+            self.class_filter = set()
         self.debug_enabled = bool(p("debug_image").value)
         self.ncnn_threads = int(p("ncnn_threads").value)
         image_topic = str(p("image_topic").value)

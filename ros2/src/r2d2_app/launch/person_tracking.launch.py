@@ -16,13 +16,18 @@ def generate_launch_description():
         DeclareLaunchArgument("control_rate", default_value="10.0"),
         DeclareLaunchArgument("image_width", default_value="640"),
         DeclareLaunchArgument("camera_hfov_deg", default_value="80.0"),
-        DeclareLaunchArgument("head_deadband_ratio", default_value="0.03"),
+        # centre margin in degrees: person within +/-10 deg of frame centre ->
+        # head and base both hold still
+        DeclareLaunchArgument("head_deadband_deg", default_value="10.0"),
         DeclareLaunchArgument("head_follow_gain", default_value="0.5"),
         DeclareLaunchArgument("max_head_shift_deg", default_value="5"),
         DeclareLaunchArgument("head_limit_deg", default_value="30.0"),
         DeclareLaunchArgument("head_recenter_deg", default_value="10.0"),
-        DeclareLaunchArgument("base_rotation_speed", default_value="0.15"),
-        DeclareLaunchArgument("base_rotation_sign", default_value="1"),
+        DeclareLaunchArgument("base_rotation_speed", default_value="0.105"),
+        # -1: +head angle = person out of frame to the RIGHT; ROS +wz turns the
+        # robot LEFT (CCW), so rotate toward them = negative wz. Flip only if
+        # hardware conventions change.
+        DeclareLaunchArgument("base_rotation_sign", default_value="-1"),
         DeclareLaunchArgument("target_lost_timeout", default_value="0.7"),
     ]
 
@@ -41,8 +46,8 @@ def generate_launch_description():
             "image_width": ParameterValue(LaunchConfiguration("image_width"), value_type=int),
             "camera_hfov_deg": ParameterValue(
                 LaunchConfiguration("camera_hfov_deg"), value_type=float),
-            "head_deadband_ratio": ParameterValue(
-                LaunchConfiguration("head_deadband_ratio"), value_type=float),
+            "head_deadband_deg": ParameterValue(
+                LaunchConfiguration("head_deadband_deg"), value_type=float),
             "head_follow_gain": ParameterValue(
                 LaunchConfiguration("head_follow_gain"), value_type=float),
             "max_head_shift_deg": ParameterValue(
