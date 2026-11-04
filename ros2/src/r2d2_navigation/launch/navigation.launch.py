@@ -345,8 +345,14 @@ def generate_launch_description():
                     name="smoother_server", **common)
     bt_navigator = Node(package="nav2_bt_navigator", executable="bt_navigator",
                         name="bt_navigator", **common)
+    # enable_stamped_cmd_vel defaults to false in this nav2 build, so behaviors
+    # publish plain Twist on "cmd_vel" — unre-remapped that went STRAIGHT to the
+    # motor, bypassing the velocity smoother (hardware trace 2026-11-04: raw 0.8
+    # rad/s spin pulses on /cmd_vel while the smoother capped everything at 0.1).
+    # Route them through the smoother input like the controller does.
     behavior_server = Node(package="nav2_behaviors", executable="behavior_server",
-                           name="behavior_server", **common)
+                           name="behavior_server",
+                           remappings=[("cmd_vel", "cmd_vel_nav")], **common)
     velocity_smoother = Node(package="nav2_velocity_smoother", executable="velocity_smoother",
                              name="velocity_smoother",
                              remappings=[("cmd_vel", "cmd_vel_nav"),
