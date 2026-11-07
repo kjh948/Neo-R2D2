@@ -8,6 +8,11 @@
     ros2 launch r2d2_navigation navigation.launch.py \
         localization:=map_server map_yaml:=<abs>/maps/hector_home.yaml
     ros2 launch r2d2_navigation navigation.launch.py mock:=true enable_nav2:=false
+    # map FROZEN by default (2026-11-07): /map keeps the posegraph content as
+    # loaded — live scans are not re-rasterized (map_update_interval pinned)
+    # and no loop closure can warp old nodes. Localization (map->odom) itself
+    # is unaffected. For upstream live-updating behavior use:
+    # ros2 launch r2d2_navigation navigation_map_update.launch.py
     (create/refresh posegraph maps with: ros2 run r2d2_navigation save_map.sh
      during a bringup mapping session — writes maps/<name>_posegraph.*;
      for hector sessions save only pgm/yaml: SKIP_POSEGRAPH=1 save_map.sh)
@@ -139,6 +144,13 @@ def generate_launch_description():
                               choices=["rpp", "mppi"]),
         DeclareLaunchArgument("params_file",
                               default_value=os.path.join(nav_share, "config", "nav2_params.yaml")),
+        DeclareLaunchArgument("map_updates", default_value="false",
+                              description="false (default): /map is frozen at the loaded "
+                                          "posegraph — slam_toolbox still localizes (map->odom) but never "
+                                          "re-publishes the raster and loop closure is off, so driving "
+                                          "cannot mutate the map. true: upstream behavior, live scans are "
+                                          "baked into /map every map_update_interval. "
+                                          "navigation_map_update.launch.py sets true for you."),
         DeclareLaunchArgument("use_sim_time", default_value="false"),
     ]
 
@@ -275,6 +287,18 @@ def generate_launch_description():
                 param_rewrites={
                     "map_file_name": LaunchConfiguration("posegraph"),
                     "use_sim_time": LaunchConfiguration("use_sim_time"),
+                    # freeze = pin the re-rasterize/republish loop (the updateMap
+                    # thread publishes once at startup, then sleeps ~forever)
+                    # and keep TryCloseLoop from warping serialized nodes;
+                    # scan_buffer_size untouched — sequential matching needs
+                    # the running scans. See Mapper::ProcessLocalization /
+                    # SlamToolbox::updateMap (karto/slam_toolbox jazzy).
+                    "map_update_interval": PythonExpression([
+                        "'5.0' if '", LaunchConfiguration("map_updates"),
+                        "' == 'true' else '1000000000.0'"]),
+                    "do_loop_closing": PythonExpression([
+                        "'true' if '", LaunchConfiguration("map_updates"),
+                        "' == 'true' else 'false'"]),
                 },
                 convert_types=True,
             )
@@ -291,6 +315,14 @@ def generate_launch_description():
             "use_sim_time": LaunchConfiguration("use_sim_time"),
             "autostart": True,
             "node_names": ["slam_toolbox"],
+            # Bond watchdog OFF for slam_toolbox (hardware 2026-11-07): its bond
+            # only forms ~10 s after activation (posegraph load), and then breaks
+            # on the very next check tick -> default 4 s aborts bringup ("unable
+            # to be reached"), any larger timeout enters a connect->broken->
+            # reset->respawn kill loop. 0 skips bond creation entirely; the
+            # lifecycle transitions themselves are still managed. slam dying is
+            # caught downstream by nav failing, not by this manager.
+            "bond_timeout": 0.0,
         }],
         condition=cond_toolbox,
     )

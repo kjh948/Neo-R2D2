@@ -107,7 +107,7 @@ controller_server:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.15
-      yaw_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.4
 
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
@@ -118,7 +118,7 @@ controller_server:
       # scaled x0.8 per operator request (global speed-down). Old values noted
       # inline where meaningful.
       desired_linear_vel: 0.048
-      lookahead_dist: 0.5
+      lookahead_dist: 0.3
       use_velocity_scaled_lookahead_dist: true
       # Hardware trace 2026-11-04: with the old 0.25 min lookahead the robot
       # limit-cycled — wz saturated ±0.24 flipping every ~2 s (turn radius
@@ -128,10 +128,10 @@ controller_server:
       # min_lookahead_dist is what actually governs today; the time matters
       # when vx headroom returns.
       lookahead_time: 1.5
-      min_lookahead_dist: 0.5
-      max_lookahead_dist: 0.7
+      min_lookahead_dist: 0.3
+      max_lookahead_dist: 0.5
       use_regulated_linear_velocity_scaling: true
-      regulated_linear_scaling_min_radius: 0.5
+      regulated_linear_scaling_min_radius: 0.2
       # ABSOLUTE FLOOR for RPP's curvature/cost speed regulation. The legs
       # stall below the minvel bench limit (calibration implies ~0.016 m/s at
       # power 1; STITION floor unknown until `motion_bench --mode minvel`
@@ -351,7 +351,7 @@ global_costmap:
         # 0.1 intentionally below the placeholder-footprint inscribed radius
         # (0.21): the 0.4 m footprint is a placeholder and nav2 only WARNs —
         # revisit after the shell width is measured, not before.
-        inflation_radius: 0.10
+        inflation_radius: 0.17
         cost_scaling_factor: 1.0
       always_send_full_costmap: True
 
@@ -385,5 +385,5 @@ local_costmap:
           min_obstacle_height: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        inflation_radius: 0.25
-        cost_scaling_factor: 5.0
+        inflation_radius: 0.17
+        cost_scaling_factor: 1.0

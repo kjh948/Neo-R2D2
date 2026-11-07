@@ -4,14 +4,15 @@
 
 ### slam_toolbox (기본, posegraph 저장)
 ```bash
-# 맵 생성하며 주행
-ros2 launch r2d2_navigation navigation.launch.py enable_nav2:=false
+# 맵 생성하며 주행 (async mapping는 bringup 전용 — navigation.launch.py의 localizer는 맵을 만들지 않음)
+ros2 launch r2d2_bringup r2d2_bringup.launch.py
 
 # 맵 저장 (maps/<name>_posegraph.* 생성)
 ros2 run r2d2_navigation save_map.sh my_map
 
-# 저장된 맵으로 로컬라이제이션
+# 저장된 맵으로 로컬라이제이션 (기본: /map freeze — 로드 시점 맵 고정)
 ros2 launch r2d2_navigation navigation.launch.py posegraph:=~/maps/my_map_posegraph enable_nav2:=false
+#   주행 중 live map update가 필요한 환경이면 §2의 navigation_map_update.launch.py 사용
 ```
 
 ### hector_slam (pgm/yaml만 저장)
@@ -34,6 +35,13 @@ ros2 launch r2d2_navigation navigation.launch.py localization:=map_server map_ya
 ```bash
 ros2 launch r2d2_navigation navigation.launch.py
 # RViz에서 2D Goal Pose 클릭 → 자율 주행
+```
+
+> 기본 `navigation.launch.py`는 **맵 freeze** — /map은 posegraph 로드 시점으로 고정되고
+> 주행 중 live 스캔이 맵에 구워지지 않습니다 (loop closure도 off; 자기위치 map→odom은 정상 동작).
+> 환경 변화가 맵에 반영돼야 하는 주행(레이아웃 변경 직후, 새 posegraph 저장 전)은:
+```bash
+ros2 launch r2d2_navigation navigation_map_update.launch.py   # slam_toolbox live map update (업스트림 동작)
 ```
 
 ### 컨트롤러 변경 (MPPI)

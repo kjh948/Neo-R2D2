@@ -527,7 +527,8 @@ linorobot2_navigation 구조(launch/config/maps/rviz)를 참고하되, **차동 
 r2d2_navigation/
 ├── config/nav2_params.yaml             # nav2 1.3.13 — fused EKF odom 프레임 반영
 ├── config/slam_toolbox_localization.yaml  # localization 모드 (posegraph 로드)
-├── launch/navigation.launch.py         # motor+lidar+RF2O/IMU EKF+slam_toolbox(loc)+nav2 core
+├── launch/navigation.launch.py         # motor+lidar+RF2O/IMU EKF+slam_toolbox(loc)+nav2 core — /map freeze 기본
+├── launch/navigation_map_update.launch.py  # 동일 스택 + slam_toolbox live map update (map_updates:=true wrapper)
 ├── maps/                               # save_map.sh 출력 (posegraph+pgm/yaml, git 추적)
 ├── rviz/nav2_config.rviz
 └── scripts/save_map.sh                 # serialize_map + map_saver_cli

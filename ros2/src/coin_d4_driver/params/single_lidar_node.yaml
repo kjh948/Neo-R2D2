@@ -17,6 +17,8 @@
     # Applied 2026-10-25 from live data (150 scans, robot docked, nothing
     # real within 0.5 m): rear self-return ghost on the shell/mast spans
     # 137.4..221.7 deg at 0.03..0.23 m (up to 100% repeat rate) -> masked
-    # with 2 deg padding each side. All other angles keep full 0.10 m
-    # sensitivity.
+    # with 2 deg padding each side. Other angles are UNFILTERED: the device
+    # header claims range_min 0.10 m but measured readings pass through down
+    # to ~0.02 m (probe 2026-11-07); slam's min_laser_range 0.05 is the real
+    # floor. Do not quote 0.10 as a sensitivity limit.
     sector_min_range: [135.4, 224.6, 0.5]
