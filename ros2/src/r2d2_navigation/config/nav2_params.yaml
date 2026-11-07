@@ -111,12 +111,25 @@ controller_server:
 
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
-      desired_linear_vel: 0.12
-      lookahead_dist: 0.25
+      # 0.06 ≈ the smoother's vx ceiling (0.05): RPP's regulation and the
+      # velocity scaling below must be designed around the speed the robot
+      # actually gets, not 0.12 the smoother clips away.
+      # 2026-11-04 evening: ALL velocities and accelerations in this file
+      # scaled x0.8 per operator request (global speed-down). Old values noted
+      # inline where meaningful.
+      desired_linear_vel: 0.048
+      lookahead_dist: 0.5
       use_velocity_scaled_lookahead_dist: true
-      lookahead_time: 0.75
-      min_lookahead_dist: 0.25
-      max_lookahead_dist: 0.60
+      # Hardware trace 2026-11-04: with the old 0.25 min lookahead the robot
+      # limit-cycled — wz saturated ±0.24 flipping every ~2 s (turn radius
+      # 0.05/0.24 = 0.21 m ≈ the lookahead itself; pure pursuit cannot track
+      # when the two collide). Lookahead must be >= ~2x the turn radius.
+      # NOTE: at v=0.05, v*lookahead_time still lands below the min, so
+      # min_lookahead_dist is what actually governs today; the time matters
+      # when vx headroom returns.
+      lookahead_time: 1.5
+      min_lookahead_dist: 0.5
+      max_lookahead_dist: 0.7
       use_regulated_linear_velocity_scaling: true
       regulated_linear_scaling_min_radius: 0.5
       # ABSOLUTE FLOOR for RPP's curvature/cost speed regulation. The legs
@@ -134,10 +147,22 @@ controller_server:
       # 0.4 rad/s sits inside the executable rotation band (calibration:
       # power ~50 -> ~0.4 rad/s; stall limit comes from
       # `motion_bench --mode minvel`, must stay below this).
-      rotate_to_heading_angular_vel: 0.1
-      #0.016
-      max_angular_accel: 0.05
-      #0.1
+      # 2026-11-04 hardware trace (goal w/ ~180 deg yaw): the old 0.1 / 0.05 pair
+      # kept R2H inside the stall band for ~30 s — RPP's accel ramp
+      # (0.05 rad/s^2) plus the 0.1 rad/s ceiling (~power 12) never actually
+      # turned the robot. Same session: BT Spin at 0.8 rotated fine, confirming
+      # the executable band starts well above 0.1.
+      # 0.15 -> 0.28: rollback to the post-waggle-fix baseline (operator
+      # 2026-11-04). The slow-down experiments (0.28->0.2->0.15, accel 0.5->0.2)
+      # are recorded below for when spin-speed comfort is re-tuned.
+      # NOTE: this build does NOT visibly clamp R2H to this value (cmd_vel_nav
+      # trace showed wz ramping to 1.6 while this read 0.15) — max_angular_accel
+      # below is the effective knob.
+      rotate_to_heading_angular_vel: 0.22
+      # rollback -> 0.5 (post-waggle-fix baseline). Slow-down variant that was
+      # tried afterwards: 0.2. In this build the R2H command is effectively
+      # governed by this accel (see rotate_to_heading_angular_vel note above).
+      max_angular_accel: 0.4
       rotate_to_heading_min_angle: 0.785
       allow_reversing: false
       use_collision_detection: true
@@ -217,9 +242,11 @@ behavior_server:
     # rad/s per power -> 0.8 rad/s needs ~power 100, the ceiling; the velocity
     # smoother caps wz at 0.8 too). min_rotational_vel must stay ABOVE the
     # stall limit printed by `motion_bench --mode minvel --axis angular`.
-    max_rotational_vel: 0.8
+    # rollback -> 0.8 (post-waggle-fix baseline; the smoother's ±0.5 clips it
+    # in practice). Slow-down variant tried afterwards: 0.4.
+    max_rotational_vel: 0.64        # x0.8 (was 0.8; smoother clips to ±0.12 anyway)
     min_rotational_vel: 0.016
-    rotational_acc_lim: 1.0
+    rotational_acc_lim: 0.8         # x0.8 (was 1.0)
 
 waypoint_follower:
   ros__parameters:
@@ -263,16 +290,31 @@ velocity_smoother:
     stamp_smoothed_velocity_with_smoothing_time: False
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.05, 0.0, 0.1]      # [vx, vy, wz] — differential: vy unused.
-                                        # vx = measured full-power speed (0.167); hard
-                                        # clip above what the MCU can ever execute
-    min_velocity: [-0.05, 0.0, -0.1]
+    # wz ceiling was 0.1 — it clipped every in-path turn RPP commanded (hardware
+    # trace 2026-11-04: /cmd_vel_nav spikes to 0.2-0.24 arrived on /cmd_vel as
+    # 0.1) and capped R2H below the rotation stall band. Raised to 0.5, then
+    # LOWERED same day: the R2H velocity param is not enforced in this build
+    # (cmd trace: wz ramped to 1.6 rad/s raw with the "ceiling" at 0.15), so
+    # this smoother limit is the ACTUAL in-place rotation speed — R2H and BT
+    # Spin both pin against it. 0.5 and 0.25 both still felt too fast and
+    # OVERSHOT the goal angle (R2H has no decelerate-into-target in this build:
+    # it runs at the clamp until the heading error sign flips). 0.15 rad/s ≈
+    # 8.6°/s — 180° takes ~21 s, and at this speed the flip-delay overshoot is
+    # small against yaw_goal_tolerance 0.25 rad. Floor check: 0.15 rad/s ≈
+    # power 19, still well above the ~0.08 stall band, so no crawl regression.
+    # In-path turns demand <=0.15 with the 0.5 m lookahead — clipping here only
+    # slightly softens sharp corners.
+    max_velocity: [0.04, 0.0, 0.12]     # [vx, vy, wz] — differential: vy unused.
+                                        # x0.8 global speed-down 2026-11-04 (was
+                                        # 0.05/0.15; 0.12 rad/s is the EFFECTIVE
+                                        # in-place rotation speed — see R2H note)
+    min_velocity: [-0.04, 0.0, -0.12]
     # NOTE: min/max_velocity are CEILINGS only — this smoother cannot floor a
     # non-zero command up to the stall limit. That job belongs to r2d2_motor's
     # min_power (set from `motion_bench --mode minvel`), which every command
     # path (RPP/MPPI/teleop/recoveries) funnels through.
-    max_accel: [0.1, 0.0, 1.0]
-    max_decel: [-0.1, 0.0, -2.0]
+    max_accel: [0.08, 0.0, 0.8]     # x0.8 (was 0.1/1.0)
+    max_decel: [-0.08, 0.0, -1.6]   # x0.8 (was -0.1/-2.0)
     odom_topic: /odom          # robot_localization publishes the fused odometry
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]
@@ -306,6 +348,9 @@ global_costmap:
           min_obstacle_height: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
+        # 0.1 intentionally below the placeholder-footprint inscribed radius
+        # (0.21): the 0.4 m footprint is a placeholder and nav2 only WARNs —
+        # revisit after the shell width is measured, not before.
         inflation_radius: 0.10
         cost_scaling_factor: 1.0
       always_send_full_costmap: True
